@@ -1,0 +1,328 @@
+<script setup lang="ts">
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
+import AppShell from '@/components/AppShell.vue'
+import { mesApi } from '@/api/mes'
+import { parseApiError } from '@/api/client'
+import { useAuthStore } from '@/stores/auth'
+import type { WorkOrderDetail } from '@/types'
+import { STATUS_LABELS } from '@/types'
+import { formatDate, formatTime, percent } from '@/utils/format'
+
+const route = useRoute()
+const router = useRouter()
+const auth = useAuthStore()
+
+const id = Number(route.params.id)
+const detail = ref<WorkOrderDetail | null>(null)
+const loading = ref(true)
+const error = ref('')
+const actionMsg = ref('')
+
+let timer: number | undefined
+
+const summary = computed(() => detail.value?.summary)
+const activeStepSeq = computed(() => {
+  const steps = detail.value?.steps ?? []
+  const withWip = steps.filter((s) => s.wipQty > 0).sort((a, b) => a.seq - b.seq)
+  return withWip[0]?.seq ?? 0
+})
+
+async function load() {
+  try {
+    const { data } = await mesApi.workOrder(id)
+    detail.value = data
+    error.value = ''
+  } catch (e) {
+    error.value = parseApiError(e)
+  } finally {
+    loading.value = false
+  }
+}
+
+async function changeStatus(action: 'close' | 'reopen') {
+  try {
+    await mesApi.changeWorkOrderStatus(id, action)
+    actionMsg.value = action === 'close' ? '工单已关单' : '工单已重新打开'
+    await load()
+  } catch (e) {
+    actionMsg.value = parseApiError(e)
+  }
+}
+
+function gotoScan() {
+  router.push('/scan')
+}
+
+function gotoTrace(sn: string) {
+  router.push({ path: '/trace', query: { sn } })
+}
+
+onMounted(() => {
+  load()
+  timer = window.setInterval(load, 15000)
+})
+
+onBeforeUnmount(() => {
+  if (timer) window.clearInterval(timer)
+})
+</script>
+
+<template>
+  <AppShell :title="summary ? `工单 ${summary.orderNo}` : '工单详情'" subtitle="工序进度、在制分布与 SN 记录">
+    <template #actions>
+      <div class="row">
+        <button class="btn" @click="router.push('/work-orders')">返回列表</button>
+        <button class="btn btn-primary" @click="gotoScan">去扫码报工</button>
+      </div>
+    </template>
+
+    <div v-if="error" class="alert alert-error" style="margin-bottom: 16px">{{ error }}</div>
+    <div v-if="loading" class="empty">加载中…</div>
+    <div v-else-if="actionMsg" class="alert alert-ok" style="margin-bottom: 14px">{{ actionMsg }}</div>
+
+    <template v-if="summary">
+      <section class="card" style="margin-bottom: 16px">
+        <div class="card-body order-head">
+          <div class="oh-left">
+            <div class="row" style="gap: 10px">
+              <span class="badge" :class="{
+                'badge-blue': summary.status === 'InProduction' || summary.status === 'Released',
+                'badge-ok': summary.status === 'Completed',
+                'badge-warn': summary.status === 'Draft',
+              }">{{ STATUS_LABELS[summary.status] ?? summary.status }}</span>
+              <span v-if="summary.priority === 1" class="badge badge-danger">急件</span>
+            </div>
+            <h2>{{ summary.productName }}</h2>
+            <div class="small muted">
+              <span class="mono">{{ summary.productCode }}</span> · {{ summary.lineName }} ·
+              交期 {{ formatDate(summary.dueDateUtc) }}
+            </div>
+          </div>
+
+          <div class="oh-stats">
+            <div><span>计划</span><strong>{{ summary.planQty }}</strong></div>
+            <div><span>投入</span><strong>{{ summary.inputQty }}</strong></div>
+            <div><span>完工</span><strong style="color: var(--ok)">{{ summary.completedQty }}</strong></div>
+            <div><span>不良隔离</span><strong style="color: var(--danger)">{{ summary.holdQty }}</strong></div>
+            <div><span>FPY</span><strong>{{ detail?.fpy ?? 0 }}%</strong></div>
+          </div>
+
+          <div class="oh-actions">
+            <button v-if="auth.canPlan && summary.status !== 'Closed'" class="btn btn-sm" @click="changeStatus('close')">关单</button>
+            <button v-if="auth.canPlan && summary.status === 'Completed'" class="btn btn-sm" @click="changeStatus('reopen')">重新打开</button>
+          </div>
+        </div>
+        <div class="overall">
+          <div class="progress" style="height: 8px">
+            <span :style="{ width: `${Math.min(100, percent(summary.completedQty, summary.planQty))}%` }"></span>
+          </div>
+          <div class="row between small muted" style="margin-top: 6px">
+            <span>完工进度 {{ percent(summary.completedQty, summary.planQty) }}%</span>
+            <span>{{ summary.completedQty }} / {{ summary.planQty }} 台</span>
+          </div>
+        </div>
+      </section>
+
+      <section class="card" style="margin-bottom: 16px">
+        <div class="card-head">
+          <h3>工序进度</h3>
+          <span class="small muted">按工艺路线顺序 · 数字为该工序累计合格 / 不良</span>
+        </div>
+        <div class="card-body">
+          <div class="flow">
+            <div
+              v-for="(s, idx) in detail?.steps ?? []"
+              :key="s.stepId"
+              class="flow-step"
+              :class="{ current: s.seq === activeStepSeq, inspection: s.isInspection }"
+            >
+              <div class="fs-head">
+                <span class="fs-seq">{{ s.seq }}</span>
+                <span class="fs-name">{{ s.stepName }}</span>
+              </div>
+              <div class="fs-nums">
+                <span class="ok">{{ s.passQty }}</span>
+                <span class="sep">/</span>
+                <span class="bad">{{ s.failQty }}</span>
+              </div>
+              <div class="fs-wip" v-if="s.wipQty">在制 {{ s.wipQty }}</div>
+              <div class="fs-wip muted" v-else>—</div>
+              <span v-if="idx < (detail?.steps.length ?? 0) - 1" class="fs-arrow">›</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="card">
+        <div class="card-head">
+          <h3>最近 SN（{{ detail?.recentUnits.length ?? 0 }}）</h3>
+          <span class="small muted">点击 SN 查看完整追溯</span>
+        </div>
+        <div v-if="!detail?.recentUnits.length" class="empty">该工单尚未开始生产</div>
+        <div v-else class="table-wrap">
+          <table class="table">
+            <thead>
+              <tr>
+                <th>SN</th>
+                <th>当前工序</th>
+                <th>状态</th>
+                <th>上线时间</th>
+                <th>最后过站</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="u in detail.recentUnits" :key="u.id" class="clickable" @click="gotoTrace(u.sn)">
+                <td class="mono">{{ u.sn }}</td>
+                <td class="small">{{ u.status === 'Completed' ? '已完工' : u.currentStepName ?? '—' }}</td>
+                <td>
+                  <span class="badge" :class="{
+                    'badge-blue': u.status === 'InProcess',
+                    'badge-ok': u.status === 'Completed',
+                    'badge-danger': u.status === 'Hold' || u.status === 'Scrapped',
+                  }">{{ STATUS_LABELS[u.status] ?? u.status }}</span>
+                </td>
+                <td class="small muted">{{ formatTime(u.createdAtUtc) }}</td>
+                <td class="small muted">{{ formatTime(u.lastScanAtUtc) }}</td>
+                <td class="small muted">追溯 →</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </template>
+  </AppShell>
+</template>
+
+<style scoped>
+.order-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 26px;
+  flex-wrap: wrap;
+}
+
+.oh-left h2 {
+  font-size: 19px;
+  margin: 8px 0 4px;
+  letter-spacing: -0.2px;
+}
+
+.oh-stats {
+  display: flex;
+  gap: 26px;
+  margin-left: auto;
+  flex-wrap: wrap;
+}
+
+.oh-stats div {
+  display: flex;
+  flex-direction: column;
+}
+
+.oh-stats span {
+  font-size: 11.5px;
+  color: var(--muted);
+}
+
+.oh-stats strong {
+  font-size: 21px;
+  font-variant-numeric: tabular-nums;
+}
+
+.overall {
+  padding: 12px 18px 14px;
+  border-top: 1px solid var(--border);
+}
+
+.flow {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding-bottom: 4px;
+}
+
+.flow-step {
+  position: relative;
+  min-width: 118px;
+  flex: 1;
+  padding: 11px 12px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: var(--surface-2);
+}
+
+.flow-step.inspection {
+  background: #f5f3ff;
+  border-color: #ddd6fe;
+}
+
+.flow-step.current {
+  border-color: var(--primary);
+  background: var(--primary-soft);
+  box-shadow: 0 4px 14px rgba(37, 99, 235, 0.12);
+}
+
+.fs-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.fs-seq {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--muted);
+}
+
+.fs-name {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.fs-nums {
+  margin-top: 7px;
+  font-size: 16px;
+  font-weight: 680;
+  font-variant-numeric: tabular-nums;
+}
+
+.fs-nums .ok {
+  color: var(--ok);
+}
+
+.fs-nums .bad {
+  color: var(--danger);
+}
+
+.fs-nums .sep {
+  color: var(--border-strong);
+  margin: 0 2px;
+  font-weight: 400;
+}
+
+.fs-wip {
+  font-size: 11px;
+  color: var(--text-2);
+  margin-top: 2px;
+}
+
+.fs-arrow {
+  position: absolute;
+  right: -9px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--border-strong);
+  font-size: 18px;
+  z-index: 1;
+}
+
+.clickable {
+  cursor: pointer;
+}
+
+.clickable:hover td {
+  background: var(--primary-soft) !important;
+}
+</style>

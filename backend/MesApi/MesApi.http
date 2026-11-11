@@ -1,0 +1,146 @@
+### 服务器电源 MES —— HTTP 调试文件（VS Code REST Client / Rider HttpClient）
+### 先执行「登录」拿到 accessToken，再替换下方 token 变量
+
+@host = http://localhost:5080
+@token = 登录后粘贴 accessToken
+@orderNo = WO20261110001
+
+### 登录（管理员）
+POST {{host}}/api/auth/login
+Content-Type: application/json
+
+{
+  "userNameOrEmail": "admin",
+  "password": "Admin@12345"
+}
+
+### 登录（操作工）
+POST {{host}}/api/auth/login
+Content-Type: application/json
+
+{
+  "userNameOrEmail": "operator1",
+  "password": "Operator@123"
+}
+
+### 健康检查
+GET {{host}}/health
+
+### 主数据引导包（产线/工位/产品/工艺路线/不良代码）
+GET {{host}}/api/master/bootstrap
+Authorization: Bearer {{token}}
+
+### 工单列表
+GET {{host}}/api/work-orders
+Authorization: Bearer {{token}}
+
+### 创建工单
+POST {{host}}/api/work-orders
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "productId": 1,
+  "lineId": 1,
+  "planQty": 200,
+  "priority": 1,
+  "plannedStartUtc": "2026-11-10T08:00:00Z",
+  "dueDateUtc": "2026-11-12T08:00:00Z",
+  "remark": "客户加急"
+}
+
+### 首站扫码上线（插件）
+POST {{host}}/api/production/scan
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "sn": "DEMO-0001",
+  "orderNo": "{{orderNo}}",
+  "stationCode": "A-01",
+  "stepCode": "PLUGIN",
+  "result": "Pass",
+  "clientKey": "8f14e45f-ea1b-4d3a-9c2f-000000000001"
+}
+
+### 过锡炉
+POST {{host}}/api/production/scan
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "sn": "DEMO-0001",
+  "orderNo": "{{orderNo}}",
+  "stationCode": "A-02",
+  "stepCode": "WAVE",
+  "result": "Pass",
+  "clientKey": "8f14e45f-ea1b-4d3a-9c2f-000000000002"
+}
+
+### 目视判定不良（必须带不良代码）
+POST {{host}}/api/production/scan
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "sn": "DEMO-0001",
+  "orderNo": "{{orderNo}}",
+  "stationCode": "A-04",
+  "stepCode": "VISUAL",
+  "result": "Fail",
+  "defectCode": "WELD-01",
+  "remark": "虚焊，隔离返修",
+  "clientKey": "8f14e45f-ea1b-4d3a-9c2f-000000000004"
+}
+
+### 不良返修放行（班组长/质检）
+POST {{host}}/api/production/hold-handle?sn=DEMO-0001
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "action": "rework",
+  "remark": "返修完成，复检"
+}
+
+### SN 追溯
+GET {{host}}/api/trace/DEMO-0001
+Authorization: Bearer {{token}}
+
+### 车间看板（按产线）
+GET {{host}}/api/dashboard?lineId=1
+Authorization: Bearer {{token}}
+
+### 现场异常上报
+POST {{host}}/api/exceptions
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "type": "Equipment",
+  "description": "过锡炉 2# 温区温度偏低",
+  "lineId": 1,
+  "stationCode": "A-02"
+}
+
+### SignalR 看板推送（浏览器内连接）
+### const conn = new signalR.HubConnectionBuilder().withUrl("/hubs/board").build()
+### conn.on("scan", e => console.log(e))
+
+### 维修站：待维修队列
+GET {{host}}/api/production/repair/pending?limit=50
+Authorization: Bearer {{token}}
+
+### 维修站：进站（重复维修超上限时管理员加 "force": true）
+POST {{host}}/api/production/repair/checkin
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{"sn":"SN-001","action":"Resolder","defectCode":"WELD-01","remark":"补焊虚焊点","stationCode":"A-RP"}
+
+### 维修站：出站（repaired=修复放回原工序重测 / scrap=报废）
+POST {{host}}/api/production/repair/checkout
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{"sn":"SN-001","outcome":"repaired","remark":"复测通过","stationCode":"A-RP"}

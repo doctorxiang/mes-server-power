@@ -1,0 +1,92 @@
+import { api } from './client'
+import type {
+  AuthResponse,
+  Dashboard,
+  ExceptionRow,
+  MasterBootstrap,
+  RecentLog,
+  RepairPendingRow,
+  RepairRecordRow,
+  ScanResponse,
+  TraceResponse,
+  User,
+  WorkOrderDetail,
+  WorkOrderListItem,
+} from '@/types'
+
+export const authApi = {
+  login: (userNameOrEmail: string, password: string) =>
+    api.post<AuthResponse>('/auth/login', { userNameOrEmail, password }),
+  me: () => api.get<User>('/auth/me'),
+  logout: (refreshToken: string) => api.post('/auth/logout', { refreshToken }),
+  changePassword: (currentPassword: string, newPassword: string) =>
+    api.post<AuthResponse>('/auth/change-password', { currentPassword, newPassword }),
+  users: () => api.get<User[]>('/auth/users'),
+  createUser: (payload: {
+    userName: string
+    displayName: string
+    employeeNo?: string
+    password: string
+    role: string
+  }) => api.post<User>('/auth/users', payload),
+  updateUser: (id: number, payload: { displayName?: string; employeeNo?: string; role?: string; isActive?: boolean }) =>
+    api.put<User>(`/auth/users/${id}`, payload),
+}
+
+export const mesApi = {
+  bootstrap: () => api.get<MasterBootstrap>('/master/bootstrap'),
+
+  workOrders: (params?: { status?: string; lineId?: number; keyword?: string }) =>
+    api.get<WorkOrderListItem[]>('/work-orders', { params }),
+  workOrder: (id: number) => api.get<WorkOrderDetail>(`/work-orders/${id}`),
+  workOrderByNo: (orderNo: string) => api.get<WorkOrderListItem>(`/work-orders/by-no/${encodeURIComponent(orderNo)}`),
+  createWorkOrder: (payload: {
+    productId: number
+    lineId: number
+    planQty: number
+    priority: number
+    plannedStartUtc: string
+    dueDateUtc: string
+    remark?: string
+  }) => api.post<WorkOrderDetail>('/work-orders', payload),
+  changeWorkOrderStatus: (id: number, action: 'release' | 'close' | 'reopen') =>
+    api.post<WorkOrderListItem>(`/work-orders/${id}/status`, null, { params: { action } }),
+
+  scan: (payload: {
+    sn: string
+    orderNo: string
+    stationCode: string
+    stepCode: string
+    result: 'Pass' | 'Fail'
+    defectCode?: string
+    remark?: string
+    clientKey?: string
+  }) => api.post<ScanResponse>('/production/scan', payload),
+  recent: (stepCode?: string, limit = 12) =>
+    api.get<RecentLog[]>('/production/recent', { params: { stepCode, limit } }),
+  handleHold: (sn: string, action: 'rework' | 'scrap', remark?: string) =>
+    api.post('/production/hold-handle', { action, remark }, { params: { sn } }),
+
+  repairPending: (limit = 50) =>
+    api.get<RepairPendingRow[]>('/production/repair/pending', { params: { limit } }),
+  repairCheckin: (payload: {
+    sn: string
+    action: string
+    defectCode?: string
+    remark?: string
+    stationCode?: string
+    force?: boolean
+  }) => api.post<RepairRecordRow>('/production/repair/checkin', payload),
+  repairCheckout: (payload: { sn: string; outcome: 'repaired' | 'scrap'; remark?: string; stationCode?: string }) =>
+    api.post<{ sn: string; status: string; message: string }>('/production/repair/checkout', payload),
+
+  dashboard: (lineId?: number) => api.get<Dashboard>('/dashboard', { params: { lineId } }),
+  trace: (sn: string) => api.get<TraceResponse>(`/trace/${encodeURIComponent(sn)}`),
+
+  exceptions: (status?: string, lineId?: number) =>
+    api.get<ExceptionRow[]>('/exceptions', { params: { status, lineId } }),
+  createException: (payload: { type: string; description: string; lineId: number; workOrderId?: number; stationCode?: string }) =>
+    api.post<ExceptionRow>('/exceptions', payload),
+  closeException: (id: number, handleNote: string) =>
+    api.post<ExceptionRow>(`/exceptions/${id}/close`, { handleNote }),
+}
