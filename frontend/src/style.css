@@ -797,6 +797,12 @@ textarea.input:focus {
   letter-spacing: 1px;
 }
 
+/* 表格容器：窄屏时表格横向滚动，而不是把整个页面撑破 */
+.table-wrap {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
 .table {
   width: 100%;
   border-collapse: collapse;
@@ -1107,5 +1113,38 @@ textarea.input:focus {
 
   .grid-2 {
     grid-template-columns: 1fr;
+  }
+}
+
+/* 手机宽度：顶栏只留核心信息，面包屑截断，用户只剩头像 */
+@media (max-width: 640px) {
+  .tc-date {
+    display: none;
+  }
+
+  .topbar-clock {
+    padding: 3px 8px;
+  }
+
+  .topbar-meta {
+    gap: 9px;
+  }
+
+  .user-chip {
+    padding: 4px;
+  }
+
+  .user-chip .avatar + div {
+    display: none;
+  }
+
+  .crumb {
+    max-width: 36vw;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .btn-sm {
+    padding: 0 8px;
   }
 }

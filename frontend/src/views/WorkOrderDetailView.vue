@@ -341,6 +341,8 @@ onBeforeUnmount(() => {
    铺满整页宽度 + 数字放大，隔着半米也能读。只在本页覆盖，不动全局。 */
 :deep(.table) {
   font-size: 14px;
+  /* 窄屏时表格在 table-wrap 里横向滚动，保住列宽不被压扁 */
+  min-width: 600px;
 }
 
 :deep(.table th) {
@@ -412,6 +414,12 @@ onBeforeUnmount(() => {
 .overall {
   padding: 14px 20px 16px;
   border-top: 1px solid var(--border);
+}
+
+/* 进度条下的两行说明：窄屏自动换行，不硬挤在一行 */
+.overall .row {
+  flex-wrap: wrap;
+  gap: 4px 18px;
 }
 
 .flow {
@@ -502,5 +510,73 @@ onBeforeUnmount(() => {
 
 .clickable:hover td {
   background: var(--primary-soft) !important;
+}
+
+/* ---------------- 自适应 ----------------
+   1280 以下：头部统计独占一行改网格均分；工序卡从「一行横向滚动」
+   改成「自动换行铺排」（滚动条对触屏不友好，也容易漏看后面的工序）。 */
+@media (max-width: 1280px) {
+  .oh-stats {
+    margin-left: 0;
+    flex-basis: 100%;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(104px, 1fr));
+    gap: 14px 20px;
+  }
+
+  .oh-stats span {
+    white-space: normal;
+  }
+
+  .flow {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    overflow: visible;
+  }
+
+  .flow-step {
+    min-width: 0;
+  }
+
+  .fs-arrow {
+    display: none;
+  }
+}
+
+/* 手机宽度：字号回落一档、内边距收紧，表格靠 table-wrap 横向滚动 */
+@media (max-width: 760px) {
+  .order-head {
+    padding: 14px 16px;
+    gap: 18px;
+  }
+
+  .oh-left h2 {
+    font-size: 21px;
+  }
+
+  .oh-stats {
+    grid-template-columns: repeat(auto-fit, minmax(88px, 1fr));
+    gap: 12px 14px;
+  }
+
+  .oh-stats strong {
+    font-size: 22px;
+  }
+
+  .overall {
+    padding: 12px 16px 14px;
+  }
+
+  :deep(.table th) {
+    padding: 10px 12px;
+  }
+
+  :deep(.table td) {
+    padding: 11px 12px;
+  }
+
+  :deep(.card-head) {
+    padding: 12px 14px;
+  }
 }
 </style>
