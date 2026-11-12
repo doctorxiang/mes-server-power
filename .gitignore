@@ -18,3 +18,8 @@ dist/
 # 测试截图
 .e2e/shots/
 .e2e/node_modules/
+
+# 运行时产物
+logs/
+backups/
+*.log

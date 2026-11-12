@@ -28,6 +28,10 @@ ASPNETCORE_ENVIRONMENT=Production  dotnet run --urls http://localhost:5080   # M
 cd frontend && npm install && npm run dev   # → http://localhost:5173
 ```
 
+> SQLite 演示模式用 `EnsureCreated` 建表，**不会给已有的 mes.db 补新表**。从旧版本升级时先删掉 `backend/MesApi/mes.db`（演示数据会重新初始化）；MySQL 模式走正式迁移，无需手工干预。
+
+**运维接口**：`/health/live`、`/health/ready`（探活）、`/docs`（内网接口文档）、`/audit`（界面里的操作审计，仅管理员）。
+
 **演示账号**（首次启动自动初始化主数据与演示生产数据）：
 
 | 账号 | 密码 | 角色 |
@@ -52,6 +56,8 @@ cd frontend && npm install && npm run dev   # → http://localhost:5173
 | 实时推送 | SignalR `/hubs/board`，扫码事件毫秒级推到看板；断线自动重连 + 8 秒轮询兜底 |
 | 现场异常 | 缺料/设备/品质异常上报与闭环处理 |
 | 账号权限 | 6 种角色（管理员/计划员/班组长/操作工/质检/只读），路由与接口双重校验 |
+| 操作审计 | 所有写操作留痕（谁/何时/哪台终端/成功与否/失败原因），密码类字段自动脱敏，管理员可按人、动作、时间检索 |
+| 可观测性 | `/health/live` 与 `/health/ready` 探活；每请求一行结构化日志 + 慢请求告警；`X-Request-Id` 全链路串联 |
 
 ## 为 200 终端并发做的设计
 
@@ -80,13 +86,18 @@ GET  /api/trace/{sn}                                  SN 追溯（含维修记�
 GET  /api/dashboard?lineId=&date=                     看板聚合
 GET  /api/exceptions        POST /api/exceptions      异常列表 / 上报
 POST /api/exceptions/{id}/close                       异常闭环
-WS   /hubs/board                                      SignalR 实时推送（scan 事件）
+GET  /api/audit?from=&to=&userName=&action=&success=  操作审计（Admin，分页）
+GET  /api/audit/{id}                                  审计详情（含请求体与请求号）
+WS   /hubs/board                                      SignalR 实时推送（scan / alert 事件）
+GET  /health/live  /health/ready                      探活（进程存活 / 依赖可用，含磁盘与待应用迁移）
+GET  /docs                                            内网接口文档（无外网依赖）
 ```
 
 调试文件：`backend/MesApi.http`；接口冒烟脚本：`bash backend/test-api.sh`（52 项断言）；
+平台健壮性冒烟：`python scripts/smoke_platform.py`（17 项：健康检查/审计/链路 Id/404 语义）；
 浏览器端到端：`node .e2e/e2e.mjs`（18 项）+ `node .e2e/repair-e2e.mjs`（维修站 7 项，含截图）。
 
-## 数据模型（11 张核心表）
+## 数据模型（12 张核心表）
 
 ```
 users / refresh_tokens                  账号与 JWT 刷新令牌（PBKDF2-SHA256 21 万次迭代）
@@ -98,6 +109,7 @@ serial_unit                             SN 档案（当前工序、状态：在�
 sn_move_log                             过站流水（只追加；追溯与报表唯一事实来源；含幂等键/生产日期/小时/班次）
 repair_record                           维修记录（第 N 次维修、不良工序/代码、措施、进出站人与时间；SN+RepairNo 唯一）
 exception_event                         现场异常
+audit_log                               操作审计（脱敏请求体、状态码、耗时、终端 IP、请求号；默认留存 90 天）
 ```
 
 ### 维修站进出站规则
@@ -119,6 +131,55 @@ exception_event                         现场异常
 3. **单端口发布**：`frontend && npm run build`，把 `dist/*` 拷到 `backend/MesApi/wwwroot/`，后端即托管前端（车间只需访问一个地址）
 4. **扫码枪**：即插即用（USB HID 键盘模式），无需驱动；PDA/手机浏览器同样可用
 5. **看板大屏**：浏览器打开 `/dashboard` 按 F11 全屏
+
+## 运维手册（上线后每天要用）
+
+### 日志
+
+- 位置：`backend/MesApi/logs/mes-YYYYMMDD.log`（按天滚动，单文件 50MB 溢出切分，保留 30 天）
+- 每个请求一行：`HTTP POST /api/production/scan -> 200 in 12.4ms`，慢请求自动升级为 `WRN`（阈值 `Diagnostics:SlowRequestMs`，默认 800ms）
+- 用户报"某单没成功"时，让他把界面提示里的**请求号**发过来，按 `grep <请求号> logs/*.log` 精确定位；或直接在「操作审计」页搜该请求号
+
+### 探活（给负载均衡 / 监控用）
+
+```bash
+curl http://<host>:5080/health/live    # 进程活着就 200
+curl http://<host>:5080/health/ready   # DB 可连 + 迁移已应用 + 磁盘空间，不可用返回 503
+```
+
+两者分开：数据库抖动时只摘流量，不重启容器（否则冷启动反而更慢）。
+
+### 操作审计
+
+- 入口：登录后「系统 → 操作审计」（仅管理员）
+- 记录范围：所有 `POST/PUT/DELETE/PATCH`，**过站扫码除外**（`Audit:ExcludePaths`）——扫码本身已在 `sn_move_log` 里全量留痕，重复记一份会让高峰写入翻倍
+- 已自动脱敏：`password / newPassword / refreshToken / token / secret`
+- 留存：默认 90 天（`Audit:RetentionDays`），后台任务每天清理；`sn_move_log` 永不清理（追溯与审厂的原始凭证）
+
+### 备份与恢复
+
+```bash
+# MySQL（走 docker 容器内的 mysqldump，现场机器不用装客户端）
+MES_DB_PASSWORD=*** python scripts/backup.py --provider mysql --container mes-mysql
+
+# SQLite 演示模式（用在线备份 API，WAL 未落盘的数据也不会丢）
+python scripts/backup.py --provider sqlite
+```
+
+- 产物在 `backups/`，默认保留 30 天，只清理脚本自己产出的 `mes_*` 文件
+- Windows 服务器也可用 `scripts/backup.ps1`（需 `-ExecutionPolicy Bypass` 或进程级放行）
+- 恢复 MySQL：`gunzip -c backups/mes_mysql_*.sql.gz | docker exec -i mes-mysql mysql -u root -p mes_server_power`
+- 建议挂 Windows 任务计划：每天 02:00 跑一次，并把 `backups/` 同步到另一台机器/网盘
+
+### 现场排障对照表
+
+| 现象 | 先看什么 |
+|---|---|
+| 扫码没反应 / 提示无法连接 | `/health/ready`；浏览器 F12 Network 看请求是否 4xx/5xx 与请求号 |
+| 提示"请求过于频繁"（429） | 该账号 1 分钟内扫码超 600 次，多为扫码枪连发或多人共用账号，按工位拆账号 |
+| 提示"已在该工序/工序不匹配" | 正常防呆：SN 当前工序与扫描工位不一致，查 `/trace/{sn}` 看它停在哪 |
+| 数据不对但接口成功 | 「操作审计」按操作人 + 时间查，确认是谁在哪台终端改的 |
+| 后台任务没生效 | 日志搜"维护任务执行失败"，多为数据库连接抖动，下个周期会重试 |
 
 ## 已知边界（二期建议）
 

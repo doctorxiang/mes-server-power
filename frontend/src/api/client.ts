@@ -61,14 +61,20 @@ api.interceptors.response.use(
 export function parseApiError(error: unknown): string {
   if (axios.isAxiosError<ProblemDetails>(error)) {
     const data = error.response?.data
+    // 5xx / 网络异常时带上请求号：用户报障时把这一小段发过来，服务端日志里能精确定位那一次请求
+    const reqId = (error.response?.headers as Record<string, string> | undefined)?.['x-request-id']
+    const status = error.response?.status ?? 0
+    const withTrace = (msg: string) =>
+      reqId && (status === 0 || status >= 500) ? `${msg}（请求号 ${reqId.slice(0, 8)}）` : msg
+
     if (data?.errors) {
       const first = Object.values(data.errors).flat()[0]
-      if (first) return first
+      if (first) return withTrace(first)
     }
-    if (data?.detail) return data.detail
+    if (data?.detail) return withTrace(data.detail)
     if (error.code === 'ECONNABORTED') return '请求超时，请稍后重试'
-    if (!error.response) return '无法连接服务器，请确认后端已启动'
-    return `请求失败（${error.response.status}）`
+    if (!error.response) return withTrace('无法连接服务器，请确认后端已启动')
+    return withTrace(`请求失败（${error.response.status}）`)
   }
   return error instanceof Error ? error.message : '发生未知错误'
 }

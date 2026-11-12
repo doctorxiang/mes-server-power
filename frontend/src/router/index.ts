@@ -59,6 +59,12 @@ const router = createRouter({
       component: () => import('@/views/UsersView.vue'),
       meta: { title: '账号管理', roles: ['Admin'] },
     },
+    {
+      path: '/audit',
+      name: 'audit',
+      component: () => import('@/views/AuditView.vue'),
+      meta: { title: '操作审计', roles: ['Admin'] },
+    },
     { path: '/:pathMatch(.*)*', redirect: '/work-orders' },
   ],
   scrollBehavior: () => ({ top: 0 }),

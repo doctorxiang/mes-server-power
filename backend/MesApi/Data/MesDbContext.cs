@@ -21,6 +21,7 @@ public class MesDbContext(DbContextOptions<MesDbContext> options) : DbContext(op
     public DbSet<SnMoveLog> MoveLogs => Set<SnMoveLog>();
     public DbSet<RepairRecord> RepairRecords => Set<RepairRecord>();
     public DbSet<ExceptionEvent> Exceptions => Set<ExceptionEvent>();
+    public DbSet<AuditLog> AuditLogs => Set<AuditLog>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -139,6 +140,16 @@ public class MesDbContext(DbContextOptions<MesDbContext> options) : DbContext(op
             e.HasIndex(x => new { x.LineId, x.Status });
             e.HasIndex(x => x.ReportedAtUtc);
             e.HasOne(x => x.WorkOrder).WithMany().HasForeignKey(x => x.WorkOrderId).OnDelete(DeleteBehavior.SetNull);
+        });
+
+        modelBuilder.Entity<AuditLog>(e =>
+        {
+            e.ToTable("audit_log");
+            // 审计检索的两个主入口：按人查、按时间倒序翻页
+            e.HasIndex(x => new { x.UserId, x.CreatedAtUtc });
+            e.HasIndex(x => x.CreatedAtUtc);
+            e.HasIndex(x => new { x.Action, x.CreatedAtUtc });
+            e.Property(x => x.Success).HasDefaultValue(true);
         });
 
         // 所有 DateTime 统一按 UTC 存储与读取，保证 JSON 输出带 Z，前端不会按本地时区误解析

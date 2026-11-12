@@ -19,6 +19,17 @@ const live = ref(false)
 const stream = ref<RecentLog[]>([])
 const clock = ref(new Date())
 
+interface BoardAlert {
+  id: number
+  level: string
+  message: string
+}
+const alerts = ref<BoardAlert[]>([])
+
+function dismissAlert(id: number) {
+  alerts.value = alerts.value.filter((a) => a.id !== id)
+}
+
 let pollTimer: number | undefined
 let clockTimer: number | undefined
 let hub: signalR.HubConnection | null = null
@@ -85,6 +96,12 @@ async function connectHub() {
       stream.value = [item, ...stream.value].slice(0, 9)
     })
 
+    hub.on('alert', (evt: { type: string; level: string; message: string }) => {
+      // 同一类告警不重复堆叠；最多显示 3 条，避免看板被提示条占满
+      if (alerts.value.some((a) => a.message === evt.message)) return
+      alerts.value = [{ id: Date.now() + Math.random(), level: evt.level, message: evt.message }, ...alerts.value].slice(0, 3)
+    })
+
     hub.onreconnected(() => (live.value = true))
     hub.onclose(() => (live.value = false))
 
@@ -143,6 +160,11 @@ onBeforeUnmount(() => {
     </header>
 
     <div v-if="error" class="board-error">{{ error }}</div>
+
+    <div v-for="a in alerts" :key="a.id" class="board-error" style="border-color: rgba(239, 159, 39, 0.5)">
+      <span style="opacity: 0.75">[{{ a.level === 'warning' ? '预警' : '提示' }}]</span> {{ a.message }}
+      <button class="board-link" style="margin-left: 10px; background: none; border: 0; cursor: pointer" @click="dismissAlert(a.id)">知道了</button>
+    </div>
 
     <div class="board-kpis">
       <div class="kpi">

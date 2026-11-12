@@ -1,3 +1,31 @@
+export interface AuditRow {
+  id: number
+  userId: number | null
+  userName: string | null
+  role: string | null
+  method: string
+  path: string
+  action: string | null
+  statusCode: number
+  success: boolean
+  message: string | null
+  clientIp: string | null
+  requestId: string | null
+  durationMs: number
+  createdAtUtc: string
+}
+
+export interface AuditDetail extends AuditRow {
+  payload: string | null
+}
+
+export interface PagedResult<T> {
+  total: number
+  page: number
+  size: number
+  items: T[]
+}
+
 export interface User {
   id: number
   userName: string

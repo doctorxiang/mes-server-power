@@ -10,6 +10,8 @@ public class GlobalExceptionHandler(ILogger<GlobalExceptionHandler> logger, IHos
     {
         if (exception is AppException appEx)
         {
+            // 交给审计中间件记录失败原因（detail）
+            httpContext.Items["ErrorDetail"] = appEx.Message;
             httpContext.Response.StatusCode = appEx.StatusCode;
             await httpContext.Response.WriteAsJsonAsync(new ProblemDetails
             {
@@ -22,6 +24,7 @@ public class GlobalExceptionHandler(ILogger<GlobalExceptionHandler> logger, IHos
         }
 
         logger.LogError(exception, "未处理异常：{Path}", httpContext.Request.Path);
+        httpContext.Items["ErrorDetail"] = exception.Message;
 
         httpContext.Response.StatusCode = StatusCodes.Status500InternalServerError;
         await httpContext.Response.WriteAsJsonAsync(new ProblemDetails

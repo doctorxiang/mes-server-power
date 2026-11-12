@@ -42,7 +42,12 @@ const navGroups = computed(() => [
     label: '系统',
     items: [
       { to: '/master', label: '主数据', icon: 'master' },
-      ...(auth.isAdmin ? [{ to: '/users', label: '账号管理', icon: 'users' }] : []),
+      ...(auth.isAdmin
+        ? [
+            { to: '/users', label: '账号管理', icon: 'users' },
+            { to: '/audit', label: '操作审计', icon: 'audit' },
+          ]
+        : []),
     ],
   },
 ])
@@ -90,6 +95,11 @@ async function logout() {
                 <path d="M4 6c0-1.7 3.6-3 8-3s8 1.3 8 3-3.6 3-8 3-8-1.3-8-3Z" />
                 <path d="M4 6v6c0 1.7 3.6 3 8 3s8-1.3 8-3V6" />
                 <path d="M4 12v6c0 1.7 3.6 3 8 3s8-1.3 8-3v-6" />
+              </template>
+              <template v-else-if="item.icon === 'audit'">
+                <path d="M7 3h7l4 4v13a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1Z" />
+                <path d="M13 3v5h5" />
+                <path d="m9 14 1.8 1.8L14.5 12" />
               </template>
               <template v-else>
                 <circle cx="9" cy="8" r="3.2" />

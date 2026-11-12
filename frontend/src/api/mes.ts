@@ -1,9 +1,12 @@
 import { api } from './client'
 import type {
+  AuditDetail,
+  AuditRow,
   AuthResponse,
   Dashboard,
   ExceptionRow,
   MasterBootstrap,
+  PagedResult,
   RecentLog,
   RepairPendingRow,
   RepairRecordRow,
@@ -33,8 +36,7 @@ export const authApi = {
     api.put<User>(`/auth/users/${id}`, payload),
 }
 
-export const mesApi = {
-  bootstrap: () => api.get<MasterBootstrap>('/master/bootstrap'),
+export const mesApi = {  bootstrap: () => api.get<MasterBootstrap>('/master/bootstrap'),
 
   workOrders: (params?: { status?: string; lineId?: number; keyword?: string }) =>
     api.get<WorkOrderListItem[]>('/work-orders', { params }),
@@ -89,4 +91,18 @@ export const mesApi = {
     api.post<ExceptionRow>('/exceptions', payload),
   closeException: (id: number, handleNote: string) =>
     api.post<ExceptionRow>(`/exceptions/${id}/close`, { handleNote }),
+}
+
+/** 审计日志（仅管理员）：客户审厂、质量追责、误操作回放 */
+export const auditApi = {
+  query: (params: {
+    from?: string
+    to?: string
+    userName?: string
+    action?: string
+    success?: boolean
+    page?: number
+    size?: number
+  }) => api.get<PagedResult<AuditRow>>('/audit', { params }),
+  detail: (id: number) => api.get<AuditDetail>(`/audit/${id}`),
 }
