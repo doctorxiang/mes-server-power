@@ -3,17 +3,68 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import NavIcon from '@/components/NavIcon.vue'
 import { useAuthStore } from '@/stores/auth'
+import { useTabsStore, type PageTab } from '@/stores/tabs'
 import { ROLE_LABELS } from '@/types'
 import { formatClock } from '@/utils/format'
 
 defineProps<{ title?: string; subtitle?: string; wide?: boolean }>()
 
 const auth = useAuthStore()
+const tabs = useTabsStore()
 const route = useRoute()
 const router = useRouter()
 
 const now = ref(new Date())
 let timer: number | undefined
+
+/* 页签同步：AppShell 可能因参数变化（如工单详情换单）被复用，所以 onMounted + watch 双保险 */
+tabs.visit(route)
+watch(
+  () => route.fullPath,
+  () => tabs.visit(route),
+)
+
+function goTab(t: PageTab) {
+  if (t.path !== route.path) router.push(t.path)
+}
+
+function closeTab(t: PageTab) {
+  const target = tabs.close(t.path)
+  if (target && target !== route.path) router.push(target)
+}
+
+function closeAllTabs() {
+  const target = tabs.closeAll()
+  if (target && target !== route.path) router.push(target)
+}
+
+function closeOtherTabs() {
+  tabs.closeOthers()
+}
+
+/* 面包屑：从导航结构反推（工单管理 > 工单报告），比在路由里手写 meta 不容易漂 */
+const breadcrumb = computed(() => {
+  for (const group of navGroups.value) {
+    for (const item of group.items) {
+      const inBranch = route.path === item.to || route.path.startsWith(`${item.to}/`)
+      if (!inBranch) continue
+      if (item.children?.length) {
+        // 「工单列表」和分组路径相同，不能吞掉 /work-orders/5 这类子路径
+        const child = item.children.find(
+          (c) => route.path === c.to || (c.to !== item.to && route.path.startsWith(`${c.to}/`)),
+        )
+        const id = route.params.id
+        const current = child?.label ?? ((route.meta.title as string) + (id ? ` #${id}` : ''))
+        return [
+          { label: item.label, to: item.to },
+          { label: current },
+        ]
+      }
+      return [{ label: item.label }]
+    }
+  }
+  return [{ label: pageTitle.value }]
+})
 
 /* ---------------- 侧边栏三态：展开 / 收起成图标条 / 关闭 ---------------- */
 type SidebarMode = 'full' | 'icon' | 'hidden'
@@ -293,7 +344,13 @@ async function logout() {
               </button>
             </template>
           </div>
-          <div class="topbar-title">{{ pageTitle }}</div>
+          <nav class="crumbs" aria-label="面包屑">
+            <template v-for="(c, i) in breadcrumb" :key="`${c.label}-${i}`">
+              <span v-if="i" class="crumb-sep">/</span>
+              <RouterLink v-if="c.to" :to="c.to" class="crumb crumb-link">{{ c.label }}</RouterLink>
+              <span v-else class="crumb crumb-current">{{ c.label }}</span>
+            </template>
+          </nav>
         </div>
 
         <div class="topbar-meta">
@@ -308,6 +365,57 @@ async function logout() {
           <button class="btn btn-sm btn-ghost" @click="logout">退出</button>
         </div>
       </header>
+
+      <!-- 页签栏：点侧边栏打开的页面都落在这里，可关闭 / 置顶 / 关闭全部 -->
+      <div class="tabbar">
+        <div class="tabbar-tabs">
+          <div
+            v-for="t in tabs.tabs"
+            :key="t.path"
+            class="page-tab"
+            :class="{ active: t.path === tabs.active, pinned: t.pinned }"
+            :title="t.pinned ? '已置顶（不可关闭）' : t.title"
+            @click="goTab(t)"
+          >
+            <svg v-if="t.pinned" class="tab-pin" viewBox="0 0 24 24" fill="currentColor" stroke="none">
+              <path d="M14 3l7 7-4 1-3 6-2-2-5 5-1-1 5-5-2-2 6-3 1-4z" />
+            </svg>
+            <span class="tab-label">{{ t.title }}</span>
+            <template v-if="!t.pinned">
+              <button class="tab-x" title="置顶" @click.stop="tabs.togglePin(t.path)">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M12 17v5" />
+                  <path d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V6h1a2 2 0 0 0 0-4H8a2 2 0 0 0 0 4h1z" />
+                </svg>
+              </button>
+              <button class="tab-x" :title="`关闭 ${t.title}`" @click.stop="closeTab(t)">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+                  <path d="M6 6l12 12M18 6 6 18" />
+                </svg>
+              </button>
+            </template>
+            <button v-else class="tab-x" title="取消置顶" @click.stop="tabs.togglePin(t.path)">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+                <path d="M6 6l12 12M18 6 6 18" />
+              </svg>
+            </button>
+          </div>
+        </div>
+        <div class="tabbar-actions">
+          <button class="btn-icon" title="关闭其他页签（保留置顶）" @click="closeOtherTabs">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="3" y="4" width="18" height="16" rx="2" />
+              <path d="M14 8v8M14 8l-3 2M14 8l3 2" />
+            </svg>
+          </button>
+          <button class="btn-icon" title="关闭全部页签（保留置顶）" @click="closeAllTabs">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="3" y="4" width="18" height="16" rx="2" />
+              <path d="m11 9 4 4m0-4-4 4" />
+            </svg>
+          </button>
+        </div>
+      </div>
 
       <main class="page" :style="wide ? 'max-width:none' : ''">
         <div v-if="title" class="page-header">

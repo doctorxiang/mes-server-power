@@ -1,0 +1,452 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>电源 MES · 技术链路与部署上手指南</title>
+<style>
+  :root {
+    --bg: #f1f4f9; --surface: #fff; --border: #e2e8f0; --text: #0f172a;
+    --text2: #475569; --muted: #94a3b8; --primary: #2563eb; --primary-soft: #eff6ff;
+    --ok: #15803d; --ok-soft: #dcfce7; --warn: #b45309; --warn-soft: #fef3c7;
+    --danger: #b91c1c; --danger-soft: #fee2e2; --mono: 'Cascadia Mono', Consolas, 'Courier New', monospace;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+    font-family: -apple-system, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif; line-height: 1.7; }
+  .wrap { max-width: 1080px; margin: 0 auto; padding: 32px 20px 80px; }
+  header.hero { background: linear-gradient(135deg, #0f172a, #1e3a8a); color: #fff;
+    border-radius: 16px; padding: 36px 36px 30px; margin-bottom: 28px; }
+  header.hero h1 { margin: 0 0 8px; font-size: 26px; }
+  header.hero p { margin: 0; color: #cbd5e1; font-size: 14px; }
+  .toc { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 18px; }
+  .toc a { color: #bfdbfe; font-size: 12.5px; text-decoration: none; border: 1px solid rgba(191,219,254,.4);
+    padding: 4px 10px; border-radius: 99px; }
+  .toc a:hover { background: rgba(255,255,255,.12); }
+  section { background: var(--surface); border: 1px solid var(--border); border-radius: 14px;
+    padding: 26px 30px; margin-bottom: 22px; }
+  h2 { font-size: 19px; margin: 0 0 6px; padding-bottom: 10px; border-bottom: 1px solid var(--border); }
+  h2 .no { color: var(--primary); margin-right: 8px; font-family: var(--mono); }
+  h3 { font-size: 15px; margin: 22px 0 8px; }
+  p, li { font-size: 13.8px; color: var(--text2); }
+  code { font-family: var(--mono); font-size: 12.5px; background: #eef2f7; border-radius: 4px; padding: 1px 6px; color: #0f172a; }
+  pre { background: #0f172a; color: #e2e8f0; border-radius: 10px; padding: 14px 18px; overflow-x: auto;
+    font-family: var(--mono); font-size: 12.5px; line-height: 1.65; }
+  pre .c { color: #64748b; } pre .k { color: #93c5fd; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; margin: 10px 0; }
+  th, td { border: 1px solid var(--border); padding: 7px 10px; text-align: left; vertical-align: top; }
+  th { background: #f8fafc; color: var(--text); font-weight: 600; white-space: nowrap; }
+  .tip, .warn, .danger { border-radius: 10px; padding: 10px 14px; font-size: 13px; margin: 12px 0; }
+  .tip { background: var(--ok-soft); color: #14532d; }
+  .warn { background: var(--warn-soft); color: #78350f; }
+  .danger { background: var(--danger-soft); color: #7f1d1d; }
+  .svg-box { background: #0f172a; border-radius: 12px; padding: 10px; margin: 14px 0; overflow-x: auto; }
+  .svg-box svg { display: block; min-width: 860px; width: 100%; height: auto; }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  @media (max-width: 800px) { .grid2 { grid-template-columns: 1fr; } }
+  .step { display: flex; gap: 12px; margin: 14px 0; }
+  .step .n { flex: 0 0 26px; height: 26px; border-radius: 50%; background: var(--primary); color: #fff;
+    display: grid; place-items: center; font-size: 13px; font-weight: 700; }
+  .step > div { flex: 1; }
+  .step b { color: var(--text); }
+  .tag { display: inline-block; font-size: 11.5px; border-radius: 5px; padding: 1px 8px; margin-right: 6px; }
+  .tag-blue { background: var(--primary-soft); color: var(--primary); }
+  .tag-green { background: var(--ok-soft); color: var(--ok); }
+  .tag-amber { background: var(--warn-soft); color: var(--warn); }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header class="hero">
+  <h1>电源 MES · 技术链路与部署上手指南</h1>
+  <p>mes-server-power —— 服务器电源制造执行系统：Vue 3 + ASP.NET Core + MySQL，写给要上手维护它的你。</p>
+  <nav class="toc">
+    <a href="#s1">1. 技术链路总图</a>
+    <a href="#s2">2. 一次扫码过站的生命周期</a>
+    <a href="#s3">3. 前端链路（你要补的 Vue 课）</a>
+    <a href="#s4">4. 后端链路（你的主场）</a>
+    <a href="#s5">5. 目录结构</a>
+    <a href="#s6">6. 本地跑起来</a>
+    <a href="#s7">7. 部署到服务器</a>
+    <a href="#s8">8. 上传 GitHub + Pages 发布</a>
+  </nav>
+</header>
+
+<!-- ============ 1 技术链路总图 ============ -->
+<section id="s1">
+  <h2><span class="no">01</span>技术链路总图</h2>
+  <p>一句话：浏览器里跑的是 Vue 单页应用（SPA），它只跟后端说话（HTTP + JSON）；后端是 ASP.NET Core 分层服务，数据落在 MySQL；Redis/RabbitMQ/MinIO 是可选中间件，缺了会自动降级，不影响跑通。</p>
+  <div class="svg-box">
+  <svg viewBox="0 0 1000 560" xmlns="http://www.w3.org/2000/svg" font-family="-apple-system,'PingFang SC','Microsoft YaHei',sans-serif">
+    <defs>
+      <marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+        <path d="M0 0 L10 5 L0 10 z" fill="#94a3b8"/>
+      </marker>
+    </defs>
+    <!-- 浏览器 -->
+    <rect x="20" y="40" width="220" height="470" rx="14" fill="#1e293b" stroke="#334155"/>
+    <text x="130" y="70" text-anchor="middle" fill="#f8fafc" font-size="15" font-weight="700">浏览器（SPA）</text>
+    <rect x="40" y="92" width="180" height="54" rx="8" fill="#0ea5e9" opacity="0.25"/>
+    <text x="130" y="114" text-anchor="middle" fill="#7dd3fc" font-size="12.5" font-weight="600">Vue 3 组件</text>
+    <text x="130" y="132" text-anchor="middle" fill="#94a3b8" font-size="10.5">页面/表单/表格</text>
+    <rect x="40" y="160" width="180" height="54" rx="8" fill="#0ea5e9" opacity="0.25"/>
+    <text x="130" y="182" text-anchor="middle" fill="#7dd3fc" font-size="12.5" font-weight="600">Vue Router</text>
+    <text x="130" y="200" text-anchor="middle" fill="#94a3b8" font-size="10.5">路由守卫：没登录跳 /login</text>
+    <rect x="40" y="228" width="180" height="54" rx="8" fill="#0ea5e9" opacity="0.25"/>
+    <text x="130" y="250" text-anchor="middle" fill="#7dd3fc" font-size="12.5" font-weight="600">Pinia 状态库</text>
+    <text x="130" y="268" text-anchor="middle" fill="#94a3b8" font-size="10.5">auth / 页签 tabs</text>
+    <rect x="40" y="296" width="180" height="54" rx="8" fill="#0ea5e9" opacity="0.25"/>
+    <text x="130" y="318" text-anchor="middle" fill="#7dd3fc" font-size="12.5" font-weight="600">Axios 封装</text>
+    <text x="130" y="336" text-anchor="middle" fill="#94a3b8" font-size="10.5">带 token / 统一报错 / 401 刷 token</text>
+    <rect x="40" y="364" width="180" height="54" rx="8" fill="#0ea5e9" opacity="0.25"/>
+    <text x="130" y="386" text-anchor="middle" fill="#7dd3fc" font-size="12.5" font-weight="600">Vite 开发服务器</text>
+    <text x="130" y="404" text-anchor="middle" fill="#94a3b8" font-size="10.5">:5173 · 代理 /api /hubs → :5080</text>
+    <text x="130" y="452" text-anchor="middle" fill="#64748b" font-size="10.5">npm run dev 时 Vite 还提供热更新</text>
+    <text x="130" y="470" text-anchor="middle" fill="#64748b" font-size="10.5">（改代码浏览器即时刷新）</text>
+
+    <!-- 后端 -->
+    <rect x="380" y="40" width="250" height="470" rx="14" fill="#1e293b" stroke="#334155"/>
+    <text x="505" y="70" text-anchor="middle" fill="#f8fafc" font-size="15" font-weight="700">ASP.NET Core 后端</text>
+    <text x="505" y="88" text-anchor="middle" fill="#64748b" font-size="10.5">:5080 · net10.0</text>
+    <rect x="400" y="102" width="210" height="46" rx="8" fill="#22c55e" opacity="0.22"/>
+    <text x="505" y="122" text-anchor="middle" fill="#86efac" font-size="12.5" font-weight="600">Controllers（API 入口）</text>
+    <text x="505" y="139" text-anchor="middle" fill="#94a3b8" font-size="10.5">鉴权 [Authorize] / 角色校验 / 参数绑定</text>
+    <rect x="400" y="160" width="210" height="46" rx="8" fill="#22c55e" opacity="0.22"/>
+    <text x="505" y="180" text-anchor="middle" fill="#86efac" font-size="12.5" font-weight="600">Services（业务逻辑）</text>
+    <text x="505" y="197" text-anchor="middle" fill="#94a3b8" font-size="10.5">过站 / 工单 / 维修 / 良率 / APS</text>
+    <rect x="400" y="218" width="210" height="46" rx="8" fill="#22c55e" opacity="0.22"/>
+    <text x="505" y="238" text-anchor="middle" fill="#86efac" font-size="12.5" font-weight="600">EF Core 9（ORM）</text>
+    <text x="505" y="255" text-anchor="middle" fill="#94a3b8" font-size="10.5">实体类 ↔ 表，LINQ ↔ SQL</text>
+    <rect x="400" y="276" width="100" height="44" rx="8" fill="#a855f7" opacity="0.25"/>
+    <text x="450" y="295" text-anchor="middle" fill="#d8b4fe" font-size="11.5" font-weight="600">Quartz</text>
+    <text x="450" y="311" text-anchor="middle" fill="#94a3b8" font-size="10">定时任务</text>
+    <rect x="510" y="276" width="100" height="44" rx="8" fill="#a855f7" opacity="0.25"/>
+    <text x="560" y="295" text-anchor="middle" fill="#d8b4fe" font-size="11.5" font-weight="600">审计/日志</text>
+    <text x="560" y="311" text-anchor="middle" fill="#94a3b8" font-size="10">请求留痕</text>
+    <rect x="400" y="332" width="210" height="52" rx="8" fill="#f59e0b" opacity="0.2"/>
+    <text x="505" y="352" text-anchor="middle" fill="#fcd34d" font-size="12" font-weight="600">JWT 认证</text>
+    <text x="505" y="369" text-anchor="middle" fill="#94a3b8" font-size="10">登录发 token，之后每个请求带上</text>
+    <rect x="400" y="396" width="210" height="52" rx="8" fill="#38bdf8" opacity="0.18"/>
+    <text x="505" y="416" text-anchor="middle" fill="#7dd3fc" font-size="12" font-weight="600">SignalR /hubs</text>
+    <text x="505" y="433" text-anchor="middle" fill="#94a3b8" font-size="10">看板实时推送（WebSocket）</text>
+    <text x="505" y="478" text-anchor="middle" fill="#64748b" font-size="10.5">中间件管线：异常→审计→路由→鉴权</text>
+    <text x="505" y="496" text-anchor="middle" fill="#64748b" font-size="10.5">缓存三级降级：Redis → 内存 → 无</text>
+
+    <!-- 存储层 -->
+    <rect x="700" y="40" width="280" height="470" rx="14" fill="#1e293b" stroke="#334155"/>
+    <text x="840" y="70" text-anchor="middle" fill="#f8fafc" font-size="15" font-weight="700">数据与中间件</text>
+    <rect x="720" y="92" width="240" height="70" rx="8" fill="#2563eb" opacity="0.3"/>
+    <text x="840" y="120" text-anchor="middle" fill="#93c5fd" font-size="13" font-weight="600">MySQL 8（主数据库）</text>
+    <text x="840" y="140" text-anchor="middle" fill="#94a3b8" font-size="10.5">17 张业务表；演示模式可切 SQLite</text>
+    <rect x="720" y="176" width="240" height="56" rx="8" fill="#dc2626" opacity="0.25"/>
+    <text x="840" y="199" text-anchor="middle" fill="#fca5a5" font-size="12.5" font-weight="600">Redis（可选）</text>
+    <text x="840" y="217" text-anchor="middle" fill="#94a3b8" font-size="10.5">分布式缓存，没有就用内存缓存</text>
+    <rect x="720" y="246" width="240" height="56" rx="8" fill="#d97706" opacity="0.25"/>
+    <text x="840" y="269" text-anchor="middle" fill="#fcd34d" font-size="12.5" font-weight="600">RabbitMQ（可选）</text>
+    <text x="840" y="287" text-anchor="middle" fill="#94a3b8" font-size="10.5">设备报文队列，没有就直调</text>
+    <rect x="720" y="316" width="240" height="56" rx="8" fill="#16a34a" opacity="0.25"/>
+    <text x="840" y="339" text-anchor="middle" fill="#86efac" font-size="12.5" font-weight="600">MinIO（可选）</text>
+    <text x="840" y="357" text-anchor="middle" fill="#94a3b8" font-size="10.5">工艺文件存储，没有就存本地磁盘</text>
+    <text x="840" y="410" text-anchor="middle" fill="#64748b" font-size="10.5">启动参数 --infra memory 用纯内存跑</text>
+    <text x="840" y="428" text-anchor="middle" fill="#64748b" font-size="10.5">docker-compose.yml 一键起中间件</text>
+    <text x="840" y="466" text-anchor="middle" fill="#475569" font-size="10.5">生产：只强依赖 MySQL，其余都可降级</text>
+
+    <!-- 箭头 -->
+    <line x1="220" y1="270" x2="380" y2="270" stroke="#94a3b8" stroke-width="2" marker-end="url(#ar)" marker-start="url(#ar)"/>
+    <text x="300" y="258" text-anchor="middle" fill="#cbd5e1" font-size="11" font-weight="600">HTTP + JSON (REST)</text>
+    <text x="300" y="288" text-anchor="middle" fill="#64748b" font-size="10">Authorization: Bearer &lt;JWT&gt;</text>
+    <line x1="630" y1="180" x2="720" y2="127" stroke="#94a3b8" stroke-width="2" marker-end="url(#ar)"/>
+    <text x="678" y="146" text-anchor="middle" fill="#cbd5e1" font-size="10.5">SQL</text>
+    <line x1="630" y1="290" x2="720" y2="200" stroke="#94a3b8" stroke-width="1.4" stroke-dasharray="5 4" marker-end="url(#ar)"/>
+    <line x1="630" y1="330" x2="720" y2="272" stroke="#94a3b8" stroke-width="1.4" stroke-dasharray="5 4" marker-end="url(#ar)"/>
+    <line x1="630" y1="360" x2="720" y2="342" stroke="#94a3b8" stroke-width="1.4" stroke-dasharray="5 4" marker-end="url(#ar)"/>
+    <text x="678" y="395" text-anchor="middle" fill="#64748b" font-size="10">虚线 = 可选，缺了自动降级</text>
+  </svg>
+  </div>
+  <div class="tip">给 C# 程序员的映射：Vue 组件 ≈ WinForms/WPF 的 UserControl；Pinia ≈ 全局单例服务；Vue Router ≈ 前端自己的"页面地址表"；Axios ≈ HttpClient 封装；EF Core 你本来就熟；JWT ≈ 自带的 Forms 认证换成无状态 token。</div>
+</section>
+
+<!-- ============ 2 生命周期 ============ -->
+<section id="s2">
+  <h2><span class="no">02</span>一次「扫码过站」的完整生命周期</h2>
+  <p>这是全系统最核心的接口：<code>POST /api/production/scan</code>。跟着一个 SN 走一遍，整条链路就通了。</p>
+  <div class="svg-box">
+  <svg viewBox="0 0 1000 620" xmlns="http://www.w3.org/2000/svg" font-family="-apple-system,'PingFang SC','Microsoft YaHei',sans-serif">
+    <defs>
+      <marker id="ar2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+        <path d="M0 0 L10 5 L0 10 z" fill="#94a3b8"/>
+      </marker>
+    </defs>
+    <!-- 4 条生命线 -->
+    <g font-size="12.5" font-weight="600">
+      <rect x="60" y="20" width="160" height="40" rx="9" fill="#0ea5e9" opacity="0.85"/>
+      <text x="140" y="45" text-anchor="middle" fill="#fff">扫码枪/页面</text>
+      <rect x="320" y="20" width="160" height="40" rx="9" fill="#8b5cf6" opacity="0.85"/>
+      <text x="400" y="45" text-anchor="middle" fill="#fff">前端 Vue</text>
+      <rect x="580" y="20" width="160" height="40" rx="9" fill="#22c55e" opacity="0.85"/>
+      <text x="660" y="45" text-anchor="middle" fill="#fff">后端 ASP.NET</text>
+      <rect x="840" y="20" width="120" height="40" rx="9" fill="#2563eb" opacity="0.85"/>
+      <text x="900" y="45" text-anchor="middle" fill="#fff">MySQL</text>
+    </g>
+    <line x1="140" y1="60" x2="140" y2="600" stroke="#334155" stroke-dasharray="4 4"/>
+    <line x1="400" y1="60" x2="400" y2="600" stroke="#334155" stroke-dasharray="4 4"/>
+    <line x1="660" y1="60" x2="660" y2="600" stroke="#334155" stroke-dasharray="4 4"/>
+    <line x1="900" y1="60" x2="900" y2="600" stroke="#334155" stroke-dasharray="4 4"/>
+
+    <g font-size="11.5" fill="#cbd5e1">
+      <line x1="140" y1="95" x2="400" y2="95" stroke="#94a3b8" stroke-width="1.6" marker-end="url(#ar2)"/>
+      <text x="270" y="88" text-anchor="middle">① 扫到 SN，回车触发 lookup()</text>
+
+      <line x1="400" y1="130" x2="660" y2="130" stroke="#94a3b8" stroke-width="1.6" marker-end="url(#ar2)"/>
+      <text x="530" y="123" text-anchor="middle" fill="#e2e8f0">② POST /api/production/scan</text>
+      <text x="530" y="145" text-anchor="middle" fill="#64748b">Header 带 JWT；body = { sn, stepCode, result… }</text>
+
+      <line x1="660" y1="180" x2="660" y2="200" stroke="#94a3b8"/>
+      <text x="672" y="196" fill="#94a3b8">③ 中间件管线：JWT 校验 → 审计开始 → 进 Controller</text>
+
+      <line x1="660" y1="230" x2="900" y2="230" stroke="#94a3b8" stroke-width="1.6" marker-end="url(#ar2)"/>
+      <text x="780" y="223" text-anchor="middle">④ 查工单/SN/工序（EF Core → SQL）</text>
+
+      <line x1="900" y1="255" x2="660" y2="255" stroke="#94a3b8" stroke-width="1.2" stroke-dasharray="4 3" marker-end="url(#ar2)"/>
+      <text x="780" y="248" text-anchor="middle" fill="#64748b">实体数据返回</text>
+
+      <rect x="500" y="285" width="330" height="130" rx="10" fill="#1e293b" stroke="#334155"/>
+      <text x="665" y="310" text-anchor="middle" fill="#86efac" font-weight="700">⑤ 业务校验（ProductionService）</text>
+      <text x="515" y="336">· 工单是否 Released/InProduction</text>
+      <text x="515" y="356">· 工序顺序对不对（不能跳站）</text>
+      <text x="515" y="376">· 物料发料够不够（409 = 要补料）</text>
+      <text x="515" y="396">· 合格 → 推进 CurrentSeq；不合格 → Hold + 维修单</text>
+
+      <line x1="660" y1="440" x2="900" y2="440" stroke="#94a3b8" stroke-width="1.6" marker-end="url(#ar2)"/>
+      <text x="780" y="433" text-anchor="middle">⑥ SaveChanges 写库（SN 状态 + 流水 + 维修记录）</text>
+
+      <line x1="900" y1="465" x2="660" y2="465" stroke="#94a3b8" stroke-width="1.2" stroke-dasharray="4 3" marker-end="url(#ar2)"/>
+      <text x="780" y="458" text-anchor="middle" fill="#64748b">事务提交</text>
+
+      <line x1="660" y1="500" x2="400" y2="500" stroke="#94a3b8" stroke-width="1.6" marker-end="url(#ar2)"/>
+      <text x="530" y="493" text-anchor="middle" fill="#e2e8f0">⑦ 返回 ScanResponse（下一站/结果/工单进度）</text>
+
+      <line x1="400" y1="535" x2="140" y2="535" stroke="#94a3b8" stroke-width="1.6" marker-end="url(#ar2)"/>
+      <text x="270" y="528" text-anchor="middle">⑧ 页面绿条/红条提示，看板收到 SignalR 推送刷新</text>
+      <text x="500" y="590" fill="#64748b">出错时：全局异常中间件把 AppException 变成 { code, message } + 对应 HTTP 状态码，前端拦截器统一弹提示</text>
+    </g>
+  </svg>
+  </div>
+</section>
+
+<!-- ============ 3 前端链路 ============ -->
+<section id="s3">
+  <h2><span class="no">03</span>前端链路：你要补的 Vue 课（按这个顺序学）</h2>
+  <table>
+    <tr><th style="width:150px">文件/概念</th><th>干什么用</th><th style="width:230px">C# 里的对应物</th></tr>
+    <tr><td><code>index.html → main.ts</code></td><td>入口：创建 app，装 Pinia、Router，挂到 #app</td><td>Program.cs</td></tr>
+    <tr><td><code>router/index.ts</code></td><td>路径 → 页面组件的映射表；<code>beforeEach</code> 守卫做登录/角色拦截</td><td>路由注册 + 授权过滤器</td></tr>
+    <tr><td><code>stores/*.ts</code></td><td>Pinia 全局状态：auth（token/角色）、tabs（页签）。组件里 <code>useAuthStore()</code> 直接读写</td><td>单例 Service + 内存状态</td></tr>
+    <tr><td><code>api/client.ts</code></td><td>Axios 实例：baseURL=/api，请求头自动塞 JWT，401 自动刷新 token，错误统一转文案</td><td>DelegatingHandler</td></tr>
+    <tr><td><code>api/mes.ts</code></td><td>按模块分组的接口清单，页面只调这些函数，不直接碰 axios</td><td>强类型的 Client 接口</td></tr>
+    <tr><td><code>views/*.vue</code></td><td>页面。&lt;script setup&gt; 写状态和函数，&lt;template&gt; 写模板，&lt;style&gt; 写样式</td><td>一个 Page 类</td></tr>
+    <tr><td><code>components/</code></td><td>跨页面复用的组件（AppShell 骨架、NavIcon 图标）</td><td>自定义控件</td></tr>
+    <tr><td><code>types.ts</code></td><td>和后端 Contracts 一一对应的 TypeScript 接口</td><td>DTO / Contracts</td></tr>
+  </table>
+  <h3>必须建立的三个心智模型</h3>
+  <div class="step"><div class="n">1</div><div><b>响应式 = 状态变了 UI 自动变。</b> <code>ref()</code> 包住的变量一改，模板里用到它的地方自动重渲染。不需要手动刷新控件。</div></div>
+  <div class="step"><div class="n">2</div><div><b>单向数据流。</b> 父组件用 props 传数据下去，子组件用 emit 传事件上来。数据永远从上往下。</div></div>
+  <div class="step"><div class="n">3</div><div><b>一切异步。</b> 后端调用全是 <code>async/await</code>（和 C# 一样），配合 <code>loading</code> 状态变量控制按钮转圈。</div></div>
+  <div class="tip">热更新（HMR）：dev 模式下 Vite 用 WebSocket 盯着文件，改了 .vue 只替换那个模块、保留页面状态，不用刷新浏览器。后端对应物是 <code>dotnet watch</code>（热重载方法体）。</div>
+</section>
+
+<!-- ============ 4 后端链路 ============ -->
+<section id="s4">
+  <h2><span class="no">04</span>后端链路：你的主场（项目做了哪些约定）</h2>
+  <table>
+    <tr><th style="width:190px">层</th><th>约定</th></tr>
+    <tr><td>Controllers</td><td>薄：只做鉴权（<code>[Authorize(Roles=...)]</code>）、参数绑定、调 Service、包返回值。<b>不写业务</b>。</td></tr>
+    <tr><td>Services</td><td>业务全在这。接口 + 实现注册到 DI（<code>builder.Services.AddScoped&lt;IX, X&gt;()</code>）。业务报错抛 <code>AppException(message, statusCode)</code>，全局中间件统一转 JSON。</td></tr>
+    <tr><td>Domain</td><td>EF Core 实体（WorkOrder / SerialUnit / SnMoveLog / RepairRecord / QcInspection…17 张表）。</td></tr>
+    <tr><td>Contracts</td><td>API 出入参 record。返回给前端的形状只在这里定义。</td></tr>
+    <tr><td>Data</td><td>MesDbContext + Migrations。改实体后 <code>dotnet ef migrations add Xxx</code>（注意设 <code>Database__Provider=MySql</code>，否则会生成 SQLite 方言）。</td></tr>
+    <tr><td>Infrastructure</td><td>缓存（Redis→内存降级）、文件存储（MinIO→本地磁盘）、审计过滤器、全局异常处理、JWT 发放。</td></tr>
+  </table>
+  <h3>EF Core 三个坑（本项目踩过的）</h3>
+  <ul>
+    <li><b>AsNoTracking 查出来的导航实体再 SaveChanges 会被当成新记录插入</b>（UNIQUE 冲突）。跨上下文带实体只用 Id，重新 <code>db.Set&lt;T&gt;().Find(id)</code>。</li>
+    <li><b>没有导航属性的关联要先 SaveChanges 拿到 Id</b>（如 SnMoveLog 记 WorkOrderId）。</li>
+    <li><b>SQLite EnsureCreated 不会给已有表加列</b>——演示库改结构要么删库重跑，要么手写 <code>ALTER TABLE</code>。</li>
+  </ul>
+</section>
+
+<!-- ============ 5 目录结构 ============ -->
+<section id="s5">
+  <h2><span class="no">05</span>目录结构（只列你会碰的）</h2>
+<pre>
+mes-server-power/
+├─ backend/
+│  ├─ MesApi/                  <span class="c"># 后端项目（net10.0）</span>
+│  │  ├─ Controllers/          <span class="c"># API 入口：WorkOrders / Production / Qc / Demo …</span>
+│  │  ├─ Services/             <span class="c"># 业务：ProductionService / WorkOrderService / DemoTopUp …</span>
+│  │  ├─ Domain/               <span class="c"># EF 实体：Production.cs / Quality.cs …</span>
+│  │  ├─ Contracts/            <span class="c"># 出入参 DTO</span>
+│  │  ├─ Data/                 <span class="c"># DbContext + Migrations/</span>
+│  │  ├─ Infrastructure/       <span class="c"># 缓存/存储/审计/异常/JWT</span>
+│  │  ├─ Program.cs            <span class="c"># 组装：DI、中间件、--topup-demo 等启动参数</span>
+│  │  └─ appsettings.json      <span class="c"># 配置（连接串用环境变量/user-secrets 覆盖）</span>
+│  └─ test-api.sh              <span class="c"># 接口冒烟：bash backend/test-api.sh</span>
+├─ frontend/
+│  ├─ src/
+│  │  ├─ api/                  <span class="c"># client.ts(axios 封装) + mes.ts(接口清单)</span>
+│  │  ├─ stores/               <span class="c"># auth.ts / tabs.ts (Pinia)</span>
+│  │  ├─ router/index.ts       <span class="c"># 路由表 + 登录守卫</span>
+│  │  ├─ views/                <span class="c"># 页面（WorkOrders/Qc/Repair/Trace…）</span>
+│  │  ├─ components/           <span class="c"># AppShell(骨架/侧边栏/页签) / NavIcon</span>
+│  │  └─ types.ts              <span class="c"># 前端 DTO</span>
+│  └─ vite.config.ts           <span class="c"># dev 代理：/api、/hubs → :5080</span>
+├─ scripts/                    <span class="c"># smoke_platform.py 等脚本</span>
+├─ .e2e/                       <span class="c"># Puppeteer 浏览器回归（node .e2e/xxx.mjs）</span>
+├─ docker-compose.yml          <span class="c"># 一键起 mysql/redis/rabbitmq/minio</span>
+└─ docs/上手指南.html           <span class="c"># 本文档</span>
+</pre>
+</section>
+
+<!-- ============ 6 本地运行 ============ -->
+<section id="s6">
+  <h2><span class="no">06</span>本地跑起来（第一次 10 分钟）</h2>
+  <div class="step"><div class="n">1</div><div><b>起中间件（可选）。</b> 装了 Docker 就 <code>docker compose up -d</code>，MySQL/Redis/RabbitMQ/MinIO 全起；没装也能跑——后端会降级成 SQLite + 内存缓存 + 本地磁盘。</div></div>
+  <div class="step"><div class="n">2</div><div><b>起后端。</b> <code>cd backend/MesApi && dotnet run</code>，监听 :5080。首次启动自动建库 + 种子数据 + 演示工单。<br>常用参数：<code>--topup-demo</code> 补演示数据、<code>--reset-demo</code> 重置生产数据。</div></div>
+  <div class="step"><div class="n">3</div><div><b>起前端。</b> <code>cd frontend && npm install && npm run dev</code>，打开 <code>http://localhost:5173</code>。</div></div>
+  <div class="step"><div class="n">4</div><div><b>登录。</b> 演示账号：<code>admin / Admin@12345</code>（管理员）、<code>leader / Leader@123</code>（班组长）、<code>qc1 / Qc@123</code>（质检）、<code>op1 / Op@123</code>（操作工）。</div></div>
+  <div class="step"><div class="n">5</div><div><b>验证。</b> <code>bash backend/test-api.sh</code> 跑接口冒烟；<code>node .e2e/e2e.mjs</code> 等跑浏览器回归。</div></div>
+</section>
+
+<!-- ============ 7 部署 ============ -->
+<section id="s7">
+  <h2><span class="no">07</span>部署到服务器（两种方式，选一种）</h2>
+  <div class="svg-box">
+  <svg viewBox="0 0 1000 330" xmlns="http://www.w3.org/2000/svg" font-family="-apple-system,'PingFang SC','Microsoft YaHei',sans-serif">
+    <defs>
+      <marker id="ar3" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+        <path d="M0 0 L10 5 L0 10 z" fill="#94a3b8"/>
+      </marker>
+    </defs>
+    <text x="500" y="28" text-anchor="middle" fill="#f8fafc" font-size="14" font-weight="700">生产拓扑（一台 Linux 服务器即可起步）</text>
+    <!-- internet -->
+    <rect x="30" y="60" width="120" height="60" rx="10" fill="#0ea5e9" opacity="0.3"/>
+    <text x="90" y="86" text-anchor="middle" fill="#7dd3fc" font-size="12.5" font-weight="600">车间终端</text>
+    <text x="90" y="104" text-anchor="middle" fill="#94a3b8" font-size="10.5">浏览器 / 扫码枪</text>
+    <!-- nginx -->
+    <rect x="230" y="55" width="170" height="70" rx="10" fill="#22c55e" opacity="0.28"/>
+    <text x="315" y="83" text-anchor="middle" fill="#86efac" font-size="13" font-weight="600">Nginx :80/:443</text>
+    <text x="315" y="103" text-anchor="middle" fill="#94a3b8" font-size="10.5">静态文件 + 反向代理</text>
+    <!-- kestrel -->
+    <rect x="480" y="55" width="190" height="70" rx="10" fill="#22c55e" opacity="0.28"/>
+    <text x="575" y="83" text-anchor="middle" fill="#86efac" font-size="13" font-weight="600">Kestrel :5080</text>
+    <text x="575" y="103" text-anchor="middle" fill="#94a3b8" font-size="10.5">dotnet MesApi.dll (systemd 守护)</text>
+    <!-- storage -->
+    <rect x="760" y="20" width="200" height="60" rx="10" fill="#2563eb" opacity="0.3"/>
+    <text x="860" y="46" text-anchor="middle" fill="#93c5fd" font-size="12.5" font-weight="600">MySQL 8 :3306</text>
+    <text x="860" y="64" text-anchor="middle" fill="#94a3b8" font-size="10.5">业务数据</text>
+    <rect x="760" y="100" width="200" height="52" rx="10" fill="#dc2626" opacity="0.22"/>
+    <text x="860" y="122" text-anchor="middle" fill="#fca5a5" font-size="12" font-weight="600">Redis / RabbitMQ / MinIO</text>
+    <text x="860" y="140" text-anchor="middle" fill="#94a3b8" font-size="10">按需装，缺了自动降级</text>
+    <!-- arrows -->
+    <line x1="150" y1="90" x2="230" y2="90" stroke="#94a3b8" stroke-width="2" marker-end="url(#ar3)"/>
+    <text x="190" y="80" text-anchor="middle" fill="#cbd5e1" font-size="10">HTTPS</text>
+    <line x1="400" y1="78" x2="480" y2="78" stroke="#94a3b8" stroke-width="2" marker-end="url(#ar3)"/>
+    <text x="440" y="68" text-anchor="middle" fill="#cbd5e1" font-size="10">/api /hubs 反代</text>
+    <line x1="400" y1="105" x2="480" y2="105" stroke="#94a3b8" stroke-width="2" marker-end="url(#ar3)" stroke-dasharray="0"/>
+    <line x1="400" y1="112" x2="230" y2="112" stroke="#334155" stroke-width="0"/>
+    <text x="440" y="122" text-anchor="middle" fill="#64748b" font-size="9.5">静态: / → dist</text>
+    <line x1="670" y1="75" x2="760" y2="50" stroke="#94a3b8" stroke-width="2" marker-end="url(#ar3)"/>
+    <line x1="670" y1="110" x2="760" y2="122" stroke="#94a3b8" stroke-width="1.5" stroke-dasharray="5 4" marker-end="url(#ar3)"/>
+    <!-- 方式B -->
+    <rect x="230" y="200" width="440" height="100" rx="10" fill="#1e293b" stroke="#334155"/>
+    <text x="450" y="228" text-anchor="middle" fill="#fcd34d" font-size="12.5" font-weight="700">方式 B：Docker Compose 一把梭</text>
+    <text x="450" y="252" text-anchor="middle" fill="#94a3b8" font-size="11">backend 打镜像 + mysql/redis/rabbitmq/minio 同一个 compose 文件</text>
+    <text x="450" y="274" text-anchor="middle" fill="#64748b" font-size="10.5">docker compose up -d --build　适合内网服务器快速起步</text>
+  </svg>
+  </div>
+
+  <h3>方式 A：裸机部署（理解原理首选）</h3>
+  <div class="step"><div class="n">1</div><div><b>发后端。</b> 开发机执行 <code>dotnet publish backend/MesApi -c Release -o publish/api</code>；把 <code>publish/api</code> 拷到服务器 <code>/opt/mes/api</code>。</div></div>
+  <div class="step"><div class="n">2</div><div><b>systemd 守护。</b> 建 <code>/etc/systemd/system/mes-api.service</code>：</div></div>
+<pre>
+[Unit]
+Description=MES API
+After=network.target mysql.service
+
+[Service]
+WorkingDirectory=/opt/mes/api
+ExecStart=/usr/bin/dotnet /opt/mes/api/MesApi.dll
+Environment=ASPNETCORE_URLS=http://localhost:5080
+Environment=Database__Provider=MySql
+Environment=ConnectionStrings__MySql=Server=localhost;Database=mes;User=mes;Password=***;
+Restart=always
+User=mes
+
+[Install]
+WantedBy=multi-user.target
+</pre>
+  <p>然后 <code>sudo systemctl enable --now mes-api</code>。改配置用环境变量覆盖 appsettings（<code>配置节__子键</code> 命名）。</p>
+  <div class="step"><div class="n">3</div><div><b>发前端。</b> <code>cd frontend && npm run build</code>，产物 <code>dist/</code> 拷到 <code>/opt/mes/web</code>。</div></div>
+  <div class="step"><div class="n">4</div><div><b>Nginx 站点</b>（静态 + 反代一个域名搞定，前端不用跨域）：</div></div>
+<pre>
+server {
+    listen 80;
+    server_name mes.example.com;
+
+    # 前端 SPA：找不到路径就回 index.html
+    root /opt/mes/web;
+    index index.html;
+    location / { try_files $uri $uri/ /index.html; }
+
+    # 后端 API 与 SignalR
+    location /api  { proxy_pass http://127.0.0.1:5080; proxy_set_header Host $host; }
+    location /hubs { proxy_pass http://127.0.0.1:5080; proxy_http_version 1.1;
+                     proxy_set_header Upgrade $http_upgrade; proxy_set_header Connection "upgrade"; }
+}
+</pre>
+  <div class="warn">上 HTTPS：证书放好后再 <code>listen 443 ssl</code>，扫码枪混 HTTP 会有 Mixed Content 报错。内网先 HTTP 跑通再补证书。</div>
+  <h3>方式 B：Docker Compose</h3>
+  <p>仓库里的 <code>docker-compose.yml</code> 已包含 mysql / redis / rabbitmq / minio / adminer；后端补一个 Dockerfile（多阶段：SDK build → aspnet runtime），生产 compose 加上 api 服务即可。<code>docker compose up -d --build</code> 一条命令起全套。</p>
+  <h3>数据库迁移上线顺序</h3>
+  <div class="step"><div class="n">1</div><div>停旧版 → 备份数据库（<code>mysqldump</code>）</div></div>
+  <div class="step"><div class="n">2</div><div>发新版，启动时执行 <code>dotnet ef database update</code>（或保持项目现有的启动自动迁移逻辑）</div></div>
+  <div class="step"><div class="n">3</div><div>跑一遍 <code>test-api.sh</code> 冒烟再放行车间流量</div></div>
+</section>
+
+<!-- ============ 8 GitHub ============ -->
+<section id="s8">
+  <h2><span class="no">08</span>上传 GitHub + 让别人能访问网页</h2>
+
+  <h3>第一步：把项目推上去（本地仓库已就绪，123 个文件，.gitignore 已挡住 node_modules/数据库/截图）</h3>
+<pre>
+<span class="c"># 1. 在 GitHub 网页上新建一个空仓库（不要勾选 README），例如 mes-server-power</span>
+git remote add origin https://github.com/&lt;你的用户名&gt;/mes-server-power.git
+git branch -M main
+git push -u origin main
+
+<span class="c"># 以后每次：git add -A && git commit -m "..." && git push</span>
+</pre>
+  <div class="danger">推送前检查：<code>appsettings.json</code> / <code>docker-compose.yml</code> 里的真实密码改成占位符（<code>***</code> 或环境变量），仓库是公开的话谁都能看到。建议用 <code>dotnet user-secrets</code> 或环境变量注入。</div>
+
+  <h3>第二步：GitHub Pages —— 能做什么、不能做什么</h3>
+  <table>
+    <tr><th style="width:90px">结论</th><th>说明</th></tr>
+    <tr><td><span class="tag tag-green">能做</span></td><td>Pages 是<b>免费静态网站托管</b>：把 <code>frontend/dist</code> 发上去，任何人都能打开 <code>https://&lt;用户名&gt;.github.io/mes-server-power/</code> 看到登录页和界面布局。</td></tr>
+    <tr><td><span class="tag tag-red" style="background:var(--danger-soft);color:var(--danger)">不能做</span></td><td>Pages <b>跑不了 ASP.NET 后端和 MySQL</b>，它只发静态文件。所以别人打开网页后，登录/过站这些接口调用会失败——除非接口另有部署地址。</td></tr>
+  </table>
+  <p>所以「GitHub 帮我形成网站」的正确姿势是三选一：</p>
+  <ul>
+    <li><b>只展示界面</b>（零成本，10 分钟）：用我加的 <code>.github/workflows/deploy-frontend.yml</code>，推送到 main 自动构建前端并发布到 Pages。仓库 <b>Settings → Pages → Source 选 GitHub Actions</b> 即生效。访客能看 UI，功能要等你把后端也部署了才能用。</li>
+    <li><b>完整可用的演示站</b>：后端 + MySQL 部署到一台便宜云服务器（阿里云/腾讯云轻量 ~30 元/月）或 Render/Railway 免费层，然后前端构建时把 <code>client.ts</code> 的 <code>baseURL</code> 指到 <code>https://api.你的域名</code>（记得后端 CORS 允许 github.io 域名）。Pages 管前端，服务器管接口。</li>
+    <li><b>内网真实使用</b>：按第 7 节部署到车间服务器，跟 GitHub 无关；GitHub 只当代码仓库和文档站。</li>
+  </ul>
+  <h3>Pages 工作流已就绪</h3>
+  <p>我已加好 <code>.github/workflows/deploy-frontend.yml</code>：推送 main 自动 <code>npm run build -- --base=./</code>（相对路径，适配 <code>github.io/仓库名/</code> 子路径），并把 <code>index.html</code> 复制成 <code>404.html</code> 兜底 SPA 深链接。合并后去 <b>Settings → Pages</b> 确认 Source 是 GitHub Actions，第一次跑完就能访问。</p>
+  <div class="tip">验证顺序：push → 仓库 Actions 页看绿色对勾 → Settings/Pages 出现访问地址 → 打开看到登录页即成功。想让访客看到"活的"系统，就再按第 7 节把后端架起来，改一行 baseURL 重新 build。</div>
+</section>
+
+<p style="text-align:center;color:#94a3b8;font-size:12px;margin-top:30px">mes-server-power · 上手指南 · 由 AI 协助整理，配合 README.md 一起看</p>
+</div>
+</body>
+</html>

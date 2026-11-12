@@ -1,0 +1,58 @@
+# 把 Vue 前端发布到 GitHub Pages（静态站）
+# 触发：push 到 main 且改动 frontend/ 或本文件；也可在 Actions 页手动触发
+# 注意：GitHub Pages 只能托管静态文件，ASP.NET 后端跑不了，
+#       页面能看，但登录/接口需要一个已部署的后端地址（见 docs/上手指南.html 的说明）。
+name: deploy-frontend
+
+on:
+  push:
+    branches: [main]
+    paths: ['frontend/**', '.github/workflows/deploy-frontend.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: 安装依赖并构建（--base=./ 让资源用相对路径，适配 Pages 子路径）
+        working-directory: frontend
+        run: |
+          npm ci
+          npm run build -- --base=./
+
+      # SPA 兜底：Pages 没有 rewrite 规则，把 index.html 复制成 404.html，
+      # 直接访问 /work-orders 这类深链接时由 404 页接管回 index.html
+      - name: SPA fallback
+        run: cp frontend/dist/index.html frontend/dist/404.html
+
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: frontend/dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

@@ -347,6 +347,156 @@ button {
   height: 17px;
 }
 
+/* ---------- 面包屑 ---------- */
+.crumbs {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  font-size: 13.5px;
+}
+
+.crumb {
+  white-space: nowrap;
+}
+
+.crumb-sep {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.crumb-link {
+  color: var(--text-2);
+  transition: color 0.15s;
+}
+
+.crumb-link:hover {
+  color: var(--primary);
+}
+
+.crumb-current {
+  color: var(--text);
+  font-weight: 600;
+}
+
+/* ---------- 页签栏 ---------- */
+.tabbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 42px;
+  padding: 0 14px 0 10px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  position: sticky;
+  top: 60px;
+  z-index: 19;
+}
+
+.tabbar-tabs {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1;
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.tabbar-tabs::-webkit-scrollbar {
+  display: none;
+}
+
+.page-tab {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 0 0 auto;
+  max-width: 200px;
+  padding: 5px 8px 5px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface-2);
+  font-size: 12.5px;
+  color: var(--text-2);
+  cursor: pointer;
+  user-select: none;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+
+.page-tab:hover {
+  background: var(--surface-3);
+  color: var(--text);
+}
+
+.page-tab.active {
+  background: var(--primary-soft);
+  border-color: rgba(37, 99, 235, 0.4);
+  color: var(--primary);
+  font-weight: 600;
+}
+
+.page-tab.pinned {
+  background: var(--surface);
+  border-color: var(--border-strong);
+}
+
+.tab-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tab-pin {
+  width: 12px;
+  height: 12px;
+  flex: 0 0 12px;
+  color: var(--primary);
+}
+
+.tab-x {
+  display: grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  flex: 0 0 16px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.15s, background 0.15s;
+}
+
+.page-tab:hover .tab-x,
+.page-tab.active .tab-x {
+  opacity: 0.7;
+}
+
+.tab-x:hover {
+  opacity: 1 !important;
+  background: rgba(15, 23, 42, 0.1);
+}
+
+.page-tab.active .tab-x:hover {
+  background: rgba(37, 99, 235, 0.18);
+}
+
+.tab-x svg {
+  width: 10px;
+  height: 10px;
+}
+
+.tabbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex: 0 0 auto;
+  padding-left: 8px;
+  border-left: 1px solid var(--border);
+}
+
 .sidebar-foot {
   margin-top: auto;
   padding: 14px 16px;
@@ -921,6 +1071,12 @@ textarea.input:focus {
   .topbar {
     padding: 0 14px;
     height: 54px;
+  }
+
+  .tabbar {
+    top: 54px;
+    height: 38px;
+    padding: 0 10px;
   }
 
   .grid-2 {
