@@ -68,7 +68,7 @@ public class YieldAnalysisService(MesDbContext db) : IYieldAnalysisService
                 {
                     g.Key.Key,
                     g.Key.Name,
-                    g.Key.Status,
+                    Status = (string?)g.Key.Status,
                     Input = g.Count(),
                     Completed = g.Count(u => u.Status == nameof(UnitStatus.Completed)),
                     Hold = g.Count(u => u.Status == nameof(UnitStatus.Hold))

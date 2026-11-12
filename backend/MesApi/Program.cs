@@ -307,6 +307,19 @@ try
         await SeedData.EnsureSeededAsync(db, app.Configuration, logger);
     }
 
+    // ---------- 数据热更新：命令行一次性补数，不启动 Web 宿主 ----------
+    // 用法：dotnet run -- --topup-demo
+    if (args.Contains("--topup-demo"))
+    {
+        using var scope = app.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<MesDbContext>();
+        var logger = scope.ServiceProvider.GetRequiredService<ILogger<Program>>();
+        var result = await DemoTopUp.RunAsync(db, logger);
+        logger.LogWarning("补数完成：{Summary}｜直通率 {Before}% → {After}%，FPY {Fpy}%",
+            result.Summary, result.YieldBefore, result.YieldAfter, result.FpyAfter);
+        return;
+    }
+
     Log.Information("MES 后端启动完成，数据库提供者={Provider}，环境={Env}", provider, app.Environment.EnvironmentName);
     app.Run();
 }

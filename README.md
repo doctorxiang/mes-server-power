@@ -72,6 +72,43 @@ cd frontend && npm install && npm run dev   # → http://localhost:5173
 | operator1 | Operator@123 | 操作工 |
 | qc1 | Qc@12345678 | 质检员 |
 
+## 演示数据（可热更新）
+
+演示库初始化后只有 3 张在制单、约 280 台 SN，良率分析看着很单薄。`Services/DemoTopUp.cs` 负责把演示数据补到"像真跑过一个月"：
+
+| 内容 | 数量 |
+|---|---|
+| 已完工工单 | 12 张（过去 12 天，每天 1 张，白班/夜班交替，两条线三个机种轮转） |
+| SN | 1 560 台，每台 9 道工序完整流水 |
+| 过站流水 | 约 1.34 万条 |
+| 维修记录 | 108 条（返修救回的那部分） |
+| 直通率 | **85%**（每张单都是 85%，整体 85.0%） |
+| FPY | 约 79%（差出来的 6 个点就是返修救回来的） |
+
+两种触发方式，**都不用重启、不用重建库、不用跑迁移**：
+
+```bash
+# ① 命令行（服务可以关着）
+dotnet run -- --topup-demo
+
+# ② HTTP（服务在跑，直接给运行中的库补数）
+curl -X POST http://localhost:5080/api/demo/topup -H "Authorization: Bearer <admin token>"
+```
+
+**幂等**：工单号已存在就跳过；某张单完工数已达 85% 就跳过。重复执行只会输出"新增 0"，不会产生脏数据。最后还会做一次全局校准（`gap = ceil(投入 × 85%) − 完工`），把测试脚本顺手建的小单造成的零点几个点的偏差补平。
+
+安全阀：`Demo:AllowTopUp=false` 或非 Admin 调用，接口直接 404/403。
+
+### 三种"热"分别是什么技术
+
+| 层面 | 技术 | 改什么生效 | 边界 |
+|---|---|---|---|
+| 前端 | **Vite HMR**（ESM 按需编译 + WebSocket 推送模块补丁） | 改 `.vue` / `.ts` 保存即热替换，页面不刷新、Pinia 状态不丢 | 改路由表、改依赖版本要整页刷新 |
+| 后端 | **.NET Hot Reload**（Roslyn Edit and Continue，`dotnet watch`） | 方法体、常量、局部变量 | 改实体字段、改构造函数签名、改 `Program.cs` 的 DI 注册属于 rude edit，必须重启 —— 生产环境不用它，用滚动发布 |
+| 数据/配置 | **幂等补数 + 缓存 TTL + 运行时改触发器** | 补数器直接写运行中的库；主数据缓存 2 分钟自动过期；Quartz 用 `TriggerJob/RescheduleJob` 改排期 | 表结构变更（加字段）只能靠 EF 迁移，不属于热更新 |
+
+所以本项目里"热"的准确含义是：**数据热、配置热、前端热，表结构不热**。加字段老实写迁移，改数据用补数器。
+
 ## 功能清单
 
 | 模块 | 说明 |
@@ -181,6 +218,7 @@ DELETE /api/files/{id}                         删除文件（Admin）
 GET  /api/jobs      POST /api/jobs/{name}/run   调度任务列表 / 手动触发（Admin）
 GET  /api/audit?from=&to=&userName=&action=&success=  操作审计（Admin，分页）
 GET  /api/audit/{id}                                  审计详情（含请求体与请求号）
+POST /api/demo/topup                                  演示数据补数（Admin，幂等，可重复调）
 WS   /hubs/board                                      SignalR 实时推送（scan / alert 事件）
 GET  /health/live  /health/ready                      探活（含 infra 中间件后端）
 GET  /docs                                            内网接口文档（无外网依赖）

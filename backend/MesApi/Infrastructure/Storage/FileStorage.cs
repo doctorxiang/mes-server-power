@@ -117,6 +117,8 @@ public sealed class S3FileStorage(IConfiguration config, ILogger<S3FileStorage> 
 
     private async Task EnsureBucketAsync(CancellationToken ct)
     {
+        if (_client is null) return;
+
         try
         {
             var exists = await AmazonS3Util.DoesS3BucketExistV2Async(_client, _bucket);
