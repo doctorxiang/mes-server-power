@@ -33,7 +33,14 @@ public class WorkOrder
     public int LineId { get; set; }
     public ProductionLine? Line { get; set; }
 
+    /// <summary>计划数量：客户要的<b>良品</b>台数，完工数达到它工单就完工（进度 100%）。</summary>
     public int PlanQty { get; set; }
+
+    /// <summary>
+    /// 累计发料套数 = 计划 + 冗余备料 + 补料。
+    /// 产线只能在这里面投产，用完了必须补料 —— 所以它是扫码建 SN 的硬上限。
+    /// </summary>
+    public int IssuedQty { get; set; }
 
     [MaxLength(16)]
     public string Status { get; set; } = nameof(WorkOrderStatus.Draft);

@@ -32,10 +32,21 @@ public record CreateWorkOrderRequest(
     DateTime DueDateUtc,
     [StringLength(256)] string? Remark);
 
+/// <summary>补料：报废把冗余料吃穿之后，追加发料让产线能继续上线。</summary>
+public record ReplenishRequest(
+    [Range(1, 100_000, ErrorMessage = "补料数量需在 1-100000 之间")] int Qty,
+    [StringLength(200)] string? Reason);
+
+/// <summary>
+/// 工单列表行。计划 / 发料 / 投入 / 完工 / 报废五个数字的关系：
+/// 发料 = 计划 + 冗余，投入 = 已上线 SN（只减不增），完工达到计划即 100%，
+/// 报废超过冗余时 ReplenishQty &gt; 0 表示必须补料。
+/// </summary>
 public record WorkOrderListItem(
     int Id, string OrderNo, string ProductCode, string ProductName, int LineId, string LineName,
     int PlanQty, int InputQty, int CompletedQty, int HoldQty, string Status,
-    int Priority, DateTime PlannedStartUtc, DateTime DueDateUtc, DateTime CreatedAtUtc);
+    int Priority, DateTime PlannedStartUtc, DateTime DueDateUtc, DateTime CreatedAtUtc,
+    int IssuedQty, int ScrapQty, int ReplenishQty);
 
 public record StepProgressDto(int StepId, string StepCode, string StepName, int Seq, bool IsInspection, int PassQty, int FailQty, int WipQty);
 

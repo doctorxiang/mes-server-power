@@ -18,15 +18,29 @@ namespace MesApi.Controllers;
 [Authorize(Roles = Roles.Admin)]
 public class DemoController(MesDbContext db, IConfiguration config, ILogger<DemoController> logger) : ControllerBase
 {
-    /// <summary>POST /api/demo/topup —— 把在制单收尾到 85% 直通率，并追加 12 张已完工工单。</summary>
+    /// <summary>POST /api/demo/topup —— 幂等补齐：已有的工单号跳过，只补缺的部分。</summary>
     [HttpPost("topup")]
     public async Task<IActionResult> TopUp(CancellationToken ct)
     {
-        // 生产环境默认关掉：造数据接口不该出现在正式库上
-        if (!(config.GetValue<bool?>("Demo:AllowTopUp") ?? false))
-            return NotFound(new { message = "演示补数已关闭（配置项 Demo:AllowTopUp=false）" });
+        if (!Enabled) return NotFound(new { message = "演示数据接口已关闭（配置项 Demo:AllowTopUp=false）" });
 
-        var result = await DemoTopUp.RunAsync(db, logger, ct);
+        var result = await DemoTopUp.RunAsync(db, logger, reset: false, ct);
         return Ok(result);
     }
+
+    /// <summary>
+    /// POST /api/demo/reset —— 清空生产数据（工单/SN/流水/维修/异常/日报）后按"计划+冗余发料"口径重建。
+    /// 主数据与账号不动，所以前端不用重新登录。
+    /// </summary>
+    [HttpPost("reset")]
+    public async Task<IActionResult> Reset(CancellationToken ct)
+    {
+        if (!Enabled) return NotFound(new { message = "演示数据接口已关闭（配置项 Demo:AllowTopUp=false）" });
+
+        logger.LogWarning("演示数据重置：清空生产数据后重建，操作人={User}", User.Identity?.Name);
+        var result = await DemoTopUp.RunAsync(db, logger, reset: true, ct);
+        return Ok(result);
+    }
+
+    private bool Enabled => config.GetValue<bool?>("Demo:AllowTopUp") ?? false;
 }

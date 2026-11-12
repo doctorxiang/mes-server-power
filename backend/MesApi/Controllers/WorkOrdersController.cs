@@ -39,4 +39,13 @@ public class WorkOrdersController(IWorkOrderService orders) : ControllerBase
     [Authorize(Roles = $"{Roles.Admin},{Roles.Planner}")]
     public async Task<ActionResult<WorkOrderListItem>> ChangeStatus(int id, [FromQuery] string action, CancellationToken ct)
         => Ok(await orders.ChangeStatusAsync(id, action, ct));
+
+    /// <summary>
+    /// 补料：报废把冗余料吃穿之后，计划员追加发料。
+    /// 前端在工单出现 ReplenishQty &gt; 0 时才提示，但接口本身允许提前补。
+    /// </summary>
+    [HttpPost("{id:int}/replenish")]
+    [Authorize(Roles = $"{Roles.Admin},{Roles.Planner},{Roles.Leader}")]
+    public async Task<ActionResult<WorkOrderListItem>> Replenish(int id, ReplenishRequest request, CancellationToken ct)
+        => Ok(await orders.ReplenishAsync(id, request.Qty, request.Reason, ct));
 }

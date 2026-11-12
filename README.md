@@ -74,40 +74,62 @@ cd frontend && npm install && npm run dev   # → http://localhost:5173
 
 ## 演示数据（可热更新）
 
-演示库初始化后只有 3 张在制单、约 280 台 SN，良率分析看着很单薄。`Services/DemoTopUp.cs` 负责把演示数据补到"像真跑过一个月"：
+演示库初始化后只有 3 张在制单、约 280 台 SN，良率分析看着很单薄。`Services/DemoTopUp.cs` 按**真实工单的物料闭环**把数据补到"像真跑过一个月"：
 
 | 内容 | 数量 |
 |---|---|
+| 工单 | 15 张（3 张在制 + 12 张已完工） |
 | 已完工工单 | 12 张（过去 12 天，每天 1 张，白班/夜班交替，两条线三个机种轮转） |
-| SN | 1 560 台，每台 9 道工序完整流水 |
-| 过站流水 | 约 1.34 万条 |
-| 维修记录 | 108 条（返修救回的那部分） |
-| 直通率 | **85%**（每张单都是 85%，整体 85.0%） |
-| FPY | 约 79%（差出来的 6 个点就是返修救回来的） |
+| SN | 2 740 台，每台最多 9 道工序完整流水 |
+| 过站流水 | 约 2.36 万条 |
+| 维修记录 | 194 条（返修救回 + 卡在维修站的隔离品） |
+| 直通率 | **85.0%**（2 329 完工 ÷ 2 740 投入） |
+| FPY | 约 78%（差出来的 7 个点就是返修救回来的） |
+| 待补料 | 1 张单缺 9 套（演示"报废吃穿冗余"的场景） |
 
 两种触发方式，**都不用重启、不用重建库、不用跑迁移**：
 
 ```bash
-# ① 命令行（服务可以关着）
+# ① 幂等补齐：已有的单号跳过，只补缺的部分（服务可以关着）
 dotnet run -- --topup-demo
 
-# ② HTTP（服务在跑，直接给运行中的库补数）
-curl -X POST http://localhost:5080/api/demo/topup -H "Authorization: Bearer <admin token>"
-```
+# ② 清空重建：删掉工单/SN/流水/维修/异常/日报后按新口径重建（主数据与账号不动）
+dotnet run -- --reset-demo
 
-**幂等**：工单号已存在就跳过；某张单完工数已达 85% 就跳过。重复执行只会输出"新增 0"，不会产生脏数据。最后还会做一次全局校准（`gap = ceil(投入 × 85%) − 完工`），把测试脚本顺手建的小单造成的零点几个点的偏差补平。
+# ③ HTTP 方式（服务在跑，直接改运行中的库）
+curl -X POST http://localhost:5080/api/demo/topup -H "Authorization: Bearer <admin token>"
+curl -X POST http://localhost:5080/api/demo/reset -H "Authorization: Bearer <admin token>"
+```
 
 安全阀：`Demo:AllowTopUp=false` 或非 Admin 调用，接口直接 404/403。
 
-### 三种"热"分别是什么技术
+### 工单的物料闭环：计划数量 ≠ 发料数量
 
-| 层面 | 技术 | 改什么生效 | 边界 |
-|---|---|---|---|
-| 前端 | **Vite HMR**（ESM 按需编译 + WebSocket 推送模块补丁） | 改 `.vue` / `.ts` 保存即热替换，页面不刷新、Pinia 状态不丢 | 改路由表、改依赖版本要整页刷新 |
-| 后端 | **.NET Hot Reload**（Roslyn Edit and Continue，`dotnet watch`） | 方法体、常量、局部变量 | 改实体字段、改构造函数签名、改 `Program.cs` 的 DI 注册属于 rude edit，必须重启 —— 生产环境不用它，用滚动发布 |
-| 数据/配置 | **幂等补数 + 缓存 TTL + 运行时改触发器** | 补数器直接写运行中的库；主数据缓存 2 分钟自动过期；Quartz 用 `TriggerJob/RescheduleJob` 改排期 | 表结构变更（加字段）只能靠 EF 迁移，不属于热更新 |
+这是这一版改掉的**业务口径**，也是最容易被做错的地方：
 
-所以本项目里"热"的准确含义是：**数据热、配置热、前端热，表结构不热**。加字段老实写迁移，改数据用补数器。
+```
+计划 120 台（客户要的良品数，不是要投多少料）
+  → 发料 141 套（120 ÷ 目标直通率 0.85，多备 21 套冗余料）
+  → 上线 141 台（每台一个 SN，发料是硬上限）
+  → 完工 120 台（= 计划 → 进度 100%，工单自动完工）
+  → 报废 21 台（冗余料被报废吃掉，刚好不用补料）
+```
+
+| 字段 | 含义 | 谁在写 |
+|---|---|---|
+| `work_order.PlanQty` | 计划**良品**数，完工要达到它 | 建单时填 |
+| `work_order.IssuedQty` | 累计发料 = 计划 + 冗余 + 补料 | 建单自动算（`MaterialPlanning.IssuedFor`）、补料接口追加 |
+| `serial_unit` 计数 | 投入（已上线台数） | 首站扫码建 SN |
+| `serial_unit.Status=Completed` 计数 | 完工 | 末站 Pass |
+| `serial_unit.Status=Scrapped` 计数 | 报废 | 维修站报废 / 不良直接报废 |
+
+三条硬规则落在代码里：
+
+1. **完工进度 = 完工 ÷ 计划**，到 100% 工单自动 Completed，不再出现"计划 300、完工 255、进度 85%"这种看着像欠产的假象。
+2. **发料是扫码的硬上限**：`started >= IssuedQty` 时再扫新 SN 直接 409 —— `工单 WOx 物料已用尽（发料 141 套 / 已上线 141 台），请先补料再上线`。
+3. **报废超过冗余 → 需补料**：`ReplenishQty = max(0, 报废数 − (发料 − 计划))`，>0 时工单列表亮红、详情页出现"补料（缺 N）"按钮，补完 `IssuedQty` 变大、缺口归零。
+
+> 口径提醒：85% 直通率 = 完工 ÷ **投料**，和"完工进度 100%"不冲突——前者说你投的料有多少变成良品，后者说这张单的交付任务完成没有。真实服务器电源产线直通率一般 95%+，这里的 85% 是演示值。
 
 ## 功能清单
 
@@ -117,7 +139,7 @@ curl -X POST http://localhost:5080/api/demo/topup -H "Authorization: Bearer <adm
 | 工序流转 | 严格按工艺路线推进：**跳站拦截、混单拦截、隔离品拦截**；完工自动判定工单完成 |
 | 不良处理 | 不良必选不良代码（17 个内置：虚焊/连锡/锡珠/极性反/耐压不良/老化掉电…）；隔离后进**维修站**闭环 |
 | 维修站 | 不良 SN 进出站管理：进站确认维修（措施/不良代码/备注）→ 修复出站**放回原判不良工序重测**；重复维修自动计数，**超过 2 次需管理员授权**否则只能报废；维修履历进追溯时间线 |
-| 工单管理 | 建单（建单即下发）、进度条、9 道工序 WIP 分布、SN 列表、关单/重开 |
+| 工单管理 | 建单即下发，自动按目标直通率算冗余备料；进度条（完工 ÷ 计划）、计划/发料/投入/完工/报废五个数、9 道工序 WIP 分布、SN 列表、补料、关单/重开 |
 | SN 追溯 | 完整工序履历：每站结果、操作人、工位、时间、循环时长、不良代码 |
 | 车间看板 | 深色大屏：6 项 KPI、小时产出、WIP 分布、TOP 不良、产线对比、实时过站流、现场异常 |
 | 实时推送 | SignalR `/hubs/board`，扫码事件毫秒级推到看板；断线自动重连 + 8 秒轮询兜底 |
@@ -125,6 +147,7 @@ curl -X POST http://localhost:5080/api/demo/topup -H "Authorization: Bearer <adm
 | 账号权限 | 6 种角色（管理员/计划员/班组长/操作工/质检/只读），路由与接口双重校验 |
 | APS 排程 | 有限产能正排：按瓶颈工序节拍 + 良率折损算时产能，给出每单开工/完工与能否按期交付，甘特图展示 |
 | 良率分析 | 按工单 / 按机种：投入、完工、隔离、不良次数、直通率、一次通过率 FPY、工序良率、不良柏拉图 |
+| 物料与补料 | 发料 = 计划 + 冗余；发料用尽拦截上线；报废超出冗余自动提示补料，班组长/计划员可追加发料 |
 | 工艺文件 | 图纸 / SOP / 检验报告上传归档（MinIO 或本地磁盘），按分类、机种、SN 检索下载 |
 | 任务调度 | Quartz.NET：维修超时预警（5min）、交期预警（30min）、夜间报表（02:30）、数据保养（03:30），支持手动补跑 |
 | 操作审计 | 所有写操作留痕（谁/何时/哪台终端/成功与否/失败原因），密码类字段自动脱敏，管理员可按人、动作、时间检索 |
@@ -218,7 +241,9 @@ DELETE /api/files/{id}                         删除文件（Admin）
 GET  /api/jobs      POST /api/jobs/{name}/run   调度任务列表 / 手动触发（Admin）
 GET  /api/audit?from=&to=&userName=&action=&success=  操作审计（Admin，分页）
 GET  /api/audit/{id}                                  审计详情（含请求体与请求号）
+POST /api/work-orders/{id}/replenish                  补料追加发料（Admin/Planner/Leader）
 POST /api/demo/topup                                  演示数据补数（Admin，幂等，可重复调）
+POST /api/demo/reset                                  清空生产数据后重建（Admin）
 WS   /hubs/board                                      SignalR 实时推送（scan / alert 事件）
 GET  /health/live  /health/ready                      探活（含 infra 中间件后端）
 GET  /docs                                            内网接口文档（无外网依赖）
@@ -235,7 +260,7 @@ users / refresh_tokens                  账号与 JWT 刷新令牌（PBKDF2-SHA2
 line / workstation                      产线、工位（每工位绑定一道工序）
 process_step / product / product_route  工序字典、机型、工艺路线（序号+标准工时）
 defect_code                             不良代码（外观/焊接/电气/包装/来料）
-work_order                              工单（状态机 Draft→Released→InProduction→Completed→Closed）
+work_order                              工单（状态机 Draft→Released→InProduction→Completed→Closed；PlanQty 良品数 / IssuedQty 累计发料）
 serial_unit                             SN 档案（当前工序、状态：在制/隔离/完工/报废，乐观并发版本号）
 sn_move_log                             过站流水（只追加；追溯与报表唯一事实来源；含幂等键/生产日期/小时/班次）
 repair_record                           维修记录（第 N 次维修、不良工序/代码、措施、进出站人与时间；SN+RepairNo 唯一）
@@ -316,6 +341,8 @@ python scripts/backup.py --provider sqlite
 | 夜间报表缺数 | `POST /api/jobs/NightlyReport/run?date=2026-11-12` 补跑，看日志 |
 | 文件上传失败 | 单文件 ≤20MB；`/health/ready` 的 `infra.storage` 是否 `s3/minio`；MinIO 控制台看 bucket 文件 |
 | 看板不刷新但扫码正常 | RabbitMQ 是否连上（`infra.messaging`）；队列积压看管理台 `mes.scan-dashboard` |
+| 扫码提示"物料已用尽" | 工单 `IssuedQty` 已被上线数用完：`GET /api/work-orders` 看"报废 vs 冗余"，走「补料」追加发料，不要改计划数量 |
+| 工单进度卡在 99% 不上 100% | 完工数还没到 `PlanQty`（少 1 台也算没完工）；看良率分析该单的隔离/报废分布 |
 
 ### APS 排程算法（看懂这一张表就够）
 

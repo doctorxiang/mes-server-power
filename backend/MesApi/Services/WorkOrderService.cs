@@ -13,6 +13,9 @@ public interface IWorkOrderService
     Task<WorkOrderDetail> CreateAsync(CreateWorkOrderRequest request, int userId, CancellationToken ct);
     Task<WorkOrderListItem> ChangeStatusAsync(int id, string action, CancellationToken ct);
     Task<WorkOrderListItem> GetByNoAsync(string orderNo, CancellationToken ct);
+
+    /// <summary>补料：报废把冗余料吃穿后追加发料，返回更新后的工单行。</summary>
+    Task<WorkOrderListItem> ReplenishAsync(int id, int qty, string? reason, CancellationToken ct);
 }
 
 public class WorkOrderService(MesDbContext db) : IWorkOrderService
@@ -65,14 +68,21 @@ public class WorkOrderService(MesDbContext db) : IWorkOrderService
             .Select(g => new { g.Key.WorkOrderId, g.Key.Status, Qty = g.Count() })
             .ToListAsync(ct);
 
-        return orders.Select(o => new WorkOrderListItem(
-            o.Id, o.OrderNo, o.Product!.Code, o.Product.Name, o.LineId, o.Line!.Name,
-            o.PlanQty,
-            unitStats.Where(s => s.WorkOrderId == o.Id).Sum(s => s.Qty),
-            unitStats.Where(s => s.WorkOrderId == o.Id && s.Status == nameof(UnitStatus.Completed)).Sum(s => s.Qty),
-            unitStats.Where(s => s.WorkOrderId == o.Id && s.Status == nameof(UnitStatus.Hold)).Sum(s => s.Qty),
-            o.Status, o.Priority, o.PlannedStartUtc, o.DueDateUtc, o.CreatedAtUtc
-        )).ToList();
+        return orders.Select(o =>
+        {
+            var scrap = unitStats.Where(s => s.WorkOrderId == o.Id && s.Status == nameof(UnitStatus.Scrapped)).Sum(s => s.Qty);
+            var issued = MaterialPlanning.EffectiveIssued(o);
+
+            return new WorkOrderListItem(
+                o.Id, o.OrderNo, o.Product!.Code, o.Product.Name, o.LineId, o.Line!.Name,
+                o.PlanQty,
+                unitStats.Where(s => s.WorkOrderId == o.Id).Sum(s => s.Qty),
+                unitStats.Where(s => s.WorkOrderId == o.Id && s.Status == nameof(UnitStatus.Completed)).Sum(s => s.Qty),
+                unitStats.Where(s => s.WorkOrderId == o.Id && s.Status == nameof(UnitStatus.Hold)).Sum(s => s.Qty),
+                o.Status, o.Priority, o.PlannedStartUtc, o.DueDateUtc, o.CreatedAtUtc,
+                issued, scrap, MaterialPlanning.ReplenishNeed(o.PlanQty, issued, scrap)
+            );
+        }).ToList();
     }
 
     public async Task<WorkOrderDetail> GetAsync(int id, CancellationToken ct)
@@ -150,6 +160,8 @@ public class WorkOrderService(MesDbContext db) : IWorkOrderService
             ProductId = product.Id,
             LineId = line.Id,
             PlanQty = request.PlanQty,
+            // 计划数量是良品数，实发要按目标直通率多备一截（120 台 → 142 套），报废从这块冗余里扣
+            IssuedQty = MaterialPlanning.IssuedFor(request.PlanQty),
             // 计划员建单即为已下发（简化流程：建单即下发，避免多一步审批）
             Status = nameof(WorkOrderStatus.Released),
             ReleasedAtUtc = DateTime.UtcNow,
@@ -203,8 +215,37 @@ public class WorkOrderService(MesDbContext db) : IWorkOrderService
         return (await ListAsync(null, null, order.OrderNo, ct)).First();
     }
 
-    private async Task<string> NextOrderNoAsync(CancellationToken ct)
+    /// <summary>
+    /// 补料：把发料总量往上加，产线才能继续上线新 SN。
+    /// 这里不强制"必须已经欠料"——提前补料是正常排产动作，只要工单没关单就允许。
+    /// </summary>
+    public async Task<WorkOrderListItem> ReplenishAsync(int id, int qty, string? reason, CancellationToken ct)
     {
+        if (qty <= 0)
+            throw new AppException("补料数量必须大于 0", StatusCodes.Status400BadRequest);
+
+        var order = await db.WorkOrders
+            .Include(w => w.Product).Include(w => w.Line)
+            .FirstOrDefaultAsync(w => w.Id == id, ct)
+            ?? throw new AppException("工单不存在", StatusCodes.Status404NotFound);
+
+        if (order.Status == nameof(WorkOrderStatus.Closed))
+            throw new AppException("工单已关单，不能再补料", StatusCodes.Status409Conflict);
+
+        order.IssuedQty = MaterialPlanning.EffectiveIssued(order) + qty;
+
+        var note = $"补料 +{qty}" + (string.IsNullOrWhiteSpace(reason) ? string.Empty : $"（{reason.Trim()}）");
+        order.Remark = string.IsNullOrWhiteSpace(order.Remark) ? note : $"{order.Remark}；{note}";
+        if (order.Remark.Length > 256)
+            order.Remark = order.Remark[^256..];
+
+        await db.SaveChangesAsync(ct);
+
+        var list = await BuildListAsync([order], ct);
+        return list[0];
+    }
+
+    private async Task<string> NextOrderNoAsync(CancellationToken ct)    {
         var prefix = $"WO{FactoryClock.NowLocal:yyyyMMdd}";
         var last = await db.WorkOrders.AsNoTracking()
             .Where(w => w.OrderNo.StartsWith(prefix))

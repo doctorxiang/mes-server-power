@@ -817,6 +817,9 @@ namespace MesApi.Data.Migrations
                     b.Property<DateTime>("DueDateUtc")
                         .HasColumnType("datetime(6)");
 
+                    b.Property<int>("IssuedQty")
+                        .HasColumnType("int");
+
                     b.Property<int>("LineId")
                         .HasColumnType("int");
 

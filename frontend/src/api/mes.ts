@@ -45,6 +45,9 @@ export const mesApi = {  bootstrap: () => api.get<MasterBootstrap>('/master/boot
     api.get<WorkOrderListItem[]>('/work-orders', { params }),
   workOrder: (id: number) => api.get<WorkOrderDetail>(`/work-orders/${id}`),
   workOrderByNo: (orderNo: string) => api.get<WorkOrderListItem>(`/work-orders/by-no/${encodeURIComponent(orderNo)}`),
+  /** 补料：报废把冗余料吃穿后追加发料 */
+  replenishWorkOrder: (id: number, qty: number, reason?: string) =>
+    api.post<WorkOrderListItem>(`/work-orders/${id}/replenish`, { qty, reason }),
   createWorkOrder: (payload: {
     productId: number
     lineId: number

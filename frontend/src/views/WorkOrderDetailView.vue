@@ -19,6 +19,43 @@ const loading = ref(true)
 const error = ref('')
 const actionMsg = ref('')
 
+// 补料：报废吃掉冗余料之后追加发料，产线才能继续上线
+const showReplenish = ref(false)
+const replenishQty = ref(0)
+const replenishReason = ref('')
+const replenishing = ref(false)
+
+/** 完工进度：完工 ÷ 计划（计划是良品数，达到就是 100%） */
+const progress = computed(() => Math.min(100, percent(summary.value?.completedQty ?? 0, summary.value?.planQty ?? 1)))
+
+/** 剩余可用料 = 发料 − 已上线 */
+const remainingMaterial = computed(() => {
+  const s = summary.value
+  if (!s) return 0
+  return Math.max(0, s.issuedQty - s.inputQty)
+})
+
+function openReplenish() {
+  replenishQty.value = Math.max(summary.value?.replenishQty ?? 0, 5)
+  replenishReason.value = summary.value?.replenishQty ? '报废超出冗余备料' : '提前补料'
+  showReplenish.value = true
+}
+
+async function submitReplenish() {
+  if (!replenishQty.value || replenishQty.value < 1) return
+  replenishing.value = true
+  try {
+    const { data } = await mesApi.replenishWorkOrder(id, replenishQty.value, replenishReason.value || undefined)
+    actionMsg.value = `已补料 ${replenishQty.value} 套，发料总量 ${data.issuedQty} 套`
+    showReplenish.value = false
+    await load()
+  } catch (e) {
+    actionMsg.value = parseApiError(e)
+  } finally {
+    replenishing.value = false
+  }
+}
+
 let timer: number | undefined
 
 const summary = computed(() => detail.value?.summary)
@@ -101,25 +138,40 @@ onBeforeUnmount(() => {
           </div>
 
           <div class="oh-stats">
-            <div><span>计划</span><strong>{{ summary.planQty }}</strong></div>
-            <div><span>投入</span><strong>{{ summary.inputQty }}</strong></div>
+            <div><span>计划（良品）</span><strong>{{ summary.planQty }}</strong></div>
+            <div>
+              <span>发料（含冗余 {{ summary.issuedQty - summary.planQty }}）</span>
+              <strong>{{ summary.issuedQty }}</strong>
+            </div>
+            <div><span>已上线</span><strong>{{ summary.inputQty }}</strong></div>
             <div><span>完工</span><strong style="color: var(--ok)">{{ summary.completedQty }}</strong></div>
-            <div><span>不良隔离</span><strong style="color: var(--danger)">{{ summary.holdQty }}</strong></div>
+            <div><span>报废</span><strong style="color: var(--danger)">{{ summary.scrapQty }}</strong></div>
+            <div><span>不良隔离</span><strong style="color: var(--warn, #d97706)">{{ summary.holdQty }}</strong></div>
             <div><span>FPY</span><strong>{{ detail?.fpy ?? 0 }}%</strong></div>
           </div>
 
           <div class="oh-actions">
+            <button
+              v-if="(auth.canPlan || auth.canHandleQuality) && summary.status !== 'Closed'"
+              class="btn btn-sm"
+              :class="{ 'btn-primary': summary.replenishQty > 0 }"
+              @click="openReplenish"
+            >
+              {{ summary.replenishQty > 0 ? `补料（缺 ${summary.replenishQty}）` : '补料' }}
+            </button>
             <button v-if="auth.canPlan && summary.status !== 'Closed'" class="btn btn-sm" @click="changeStatus('close')">关单</button>
             <button v-if="auth.canPlan && summary.status === 'Completed'" class="btn btn-sm" @click="changeStatus('reopen')">重新打开</button>
           </div>
         </div>
         <div class="overall">
           <div class="progress" style="height: 8px">
-            <span :style="{ width: `${Math.min(100, percent(summary.completedQty, summary.planQty))}%` }"></span>
+            <span :style="{ width: `${progress}%` }"></span>
           </div>
           <div class="row between small muted" style="margin-top: 6px">
-            <span>完工进度 {{ percent(summary.completedQty, summary.planQty) }}%</span>
-            <span>{{ summary.completedQty }} / {{ summary.planQty }} 台</span>
+            <span>完工进度 {{ progress }}%（完工 ÷ 计划，达到计划即完工）</span>
+            <span>
+              {{ summary.completedQty }} / {{ summary.planQty }} 台 · 剩余可用料 {{ remainingMaterial }} 套
+            </span>
           </div>
         </div>
       </section>
@@ -192,6 +244,40 @@ onBeforeUnmount(() => {
         </div>
       </section>
     </template>
+
+    <!-- 补料：报废吃掉冗余料之后追加发料 -->
+    <div v-if="showReplenish" class="modal-mask" @click.self="showReplenish = false">
+      <div class="modal" style="max-width: 440px">
+        <div class="modal-head">
+          <h3>补料</h3>
+          <button class="btn btn-sm btn-ghost" @click="showReplenish = false">关闭</button>
+        </div>
+        <div class="modal-body">
+          <p class="small muted" style="margin-top: 0">
+            工单 {{ summary?.orderNo }}：计划 {{ summary?.planQty }} 台，已发 {{ summary?.issuedQty }} 套
+            （其中冗余 {{ (summary?.issuedQty ?? 0) - (summary?.planQty ?? 0) }}），已上线 {{ summary?.inputQty }}，
+            已报废 {{ summary?.scrapQty }}。
+          </p>
+          <p v-if="summary?.replenishQty" class="small" style="color: var(--danger); margin-top: 0">
+            报废已超出冗余 {{ summary.replenishQty }} 套，不补料产线无法继续上线。
+          </p>
+          <div class="field">
+            <label>补料数量（套）</label>
+            <input v-model.number="replenishQty" type="number" min="1" class="input" />
+          </div>
+          <div class="field">
+            <label>原因</label>
+            <input v-model="replenishReason" class="input" placeholder="如：报废偏高 / 来料不良 / 提前备料" />
+          </div>
+          <div class="row" style="justify-content: flex-end; gap: 8px; margin-top: 14px">
+            <button class="btn" @click="showReplenish = false">取消</button>
+            <button class="btn btn-primary" :disabled="replenishing" @click="submitReplenish">
+              {{ replenishing ? '提交中…' : '确认补料' }}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
   </AppShell>
 </template>
 

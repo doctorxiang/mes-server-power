@@ -307,14 +307,16 @@ try
         await SeedData.EnsureSeededAsync(db, app.Configuration, logger);
     }
 
-    // ---------- 数据热更新：命令行一次性补数，不启动 Web 宿主 ----------
-    // 用法：dotnet run -- --topup-demo
-    if (args.Contains("--topup-demo"))
+    // ---------- 演示数据：命令行一次性生成，不启动 Web 宿主 ----------
+    //   dotnet run -- --topup-demo   幂等补齐（已有的单号跳过）
+    //   dotnet run -- --reset-demo   清空生产数据后重建（演示库用）
+    if (args.Contains("--topup-demo") || args.Contains("--reset-demo"))
     {
+        var reset = args.Contains("--reset-demo");
         using var scope = app.Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<MesDbContext>();
         var logger = scope.ServiceProvider.GetRequiredService<ILogger<Program>>();
-        var result = await DemoTopUp.RunAsync(db, logger);
+        var result = await DemoTopUp.RunAsync(db, logger, reset);
         logger.LogWarning("补数完成：{Summary}｜直通率 {Before}% → {After}%，FPY {Fpy}%",
             result.Summary, result.YieldBefore, result.YieldAfter, result.FpyAfter);
         return;

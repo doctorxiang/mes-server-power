@@ -46,12 +46,24 @@ const filtered = computed(() => {
   return list
 })
 
-const totals = computed(() => ({
-  active: orders.value.filter((o) => o.status === 'Released' || o.status === 'InProduction').length,
-  plan: orders.value.filter((o) => o.status === 'Released' || o.status === 'InProduction').reduce((s, o) => s + o.planQty, 0),
-  completed: orders.value.reduce((s, o) => s + o.completedQty, 0),
-  hold: orders.value.reduce((s, o) => s + o.holdQty, 0),
-}))
+const totals = computed(() => {
+  const active = orders.value.filter((o) => o.status === 'Released' || o.status === 'InProduction')
+  return {
+    active: active.length,
+    plan: active.reduce((s, o) => s + o.planQty, 0),
+    issued: active.reduce((s, o) => s + o.issuedQty, 0),
+    completed: orders.value.reduce((s, o) => s + o.completedQty, 0),
+    hold: orders.value.reduce((s, o) => s + o.holdQty, 0),
+    // 报废把冗余料吃穿、必须补料的单子
+    shortage: orders.value.filter((o) => o.replenishQty > 0).length,
+    shortageQty: orders.value.reduce((s, o) => s + o.replenishQty, 0),
+  }
+})
+
+/** 完工进度：完工 ÷ 计划，封顶 100%（计划是良品数，完工到了就该是满格） */
+function progressOf(o: WorkOrderListItem): number {
+  return Math.min(100, percent(o.completedQty, o.planQty))
+}
 
 async function load() {
   loading.value = true
@@ -122,13 +134,17 @@ onMounted(load)
         <div class="label">在制计划量</div>
         <div class="value">{{ totals.plan }}<small>台</small></div>
       </div>
+      <div class="stat">
+        <div class="label">在制发料</div>
+        <div class="value">{{ totals.issued }}<small>套</small></div>
+      </div>
       <div class="stat ok">
         <div class="label">累计完工</div>
         <div class="value">{{ totals.completed }}<small>台</small></div>
       </div>
       <div class="stat danger">
-        <div class="label">不良隔离</div>
-        <div class="value">{{ totals.hold }}<small>台</small></div>
+        <div class="label">待补料</div>
+        <div class="value">{{ totals.shortage }}<small>张 / {{ totals.shortageQty }} 套</small></div>
       </div>
     </div>
 
@@ -151,8 +167,8 @@ onMounted(load)
               <th>工单号</th>
               <th>产品</th>
               <th>产线</th>
-              <th style="width: 190px">进度</th>
-              <th>计划 / 投入 / 完工</th>
+              <th style="width: 190px">进度（完工 ÷ 计划）</th>
+              <th>计划 / 发料 / 投入 / 完工</th>
               <th>状态</th>
               <th>交期</th>
               <th></th>
@@ -171,12 +187,16 @@ onMounted(load)
               <td class="small">{{ o.lineName }}</td>
               <td>
                 <div class="row between small" style="margin-bottom: 5px">
-                  <span class="muted">{{ percent(o.completedQty, o.planQty) }}%</span>
-                  <span v-if="o.holdQty" class="badge badge-danger">不良 {{ o.holdQty }}</span>
+                  <span class="muted">{{ progressOf(o) }}%</span>
+                  <span v-if="o.replenishQty" class="badge badge-danger">需补料 {{ o.replenishQty }}</span>
+                  <span v-else-if="o.holdQty" class="badge badge-warn">隔离 {{ o.holdQty }}</span>
                 </div>
-                <div class="progress"><span :style="{ width: `${Math.min(100, percent(o.completedQty, o.planQty))}%` }"></span></div>
+                <div class="progress"><span :style="{ width: `${progressOf(o)}%` }"></span></div>
               </td>
-              <td class="small mono">{{ o.planQty }} / {{ o.inputQty }} / {{ o.completedQty }}</td>
+              <td class="small mono">
+                {{ o.planQty }} / {{ o.issuedQty }} / {{ o.inputQty }} / {{ o.completedQty }}
+                <div class="small muted" v-if="o.scrapQty">报废 {{ o.scrapQty }}（冗余 {{ o.issuedQty - o.planQty }}）</div>
+              </td>
               <td>
                 <span class="badge" :class="{
                   'badge-blue': o.status === 'InProduction' || o.status === 'Released',

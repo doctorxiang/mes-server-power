@@ -197,6 +197,12 @@ export interface WorkOrderListItem {
   plannedStartUtc: string
   dueDateUtc: string
   createdAtUtc: string
+  /** 累计发料（计划 + 冗余 + 补料），产线只能在这里面投产 */
+  issuedQty: number
+  /** 已报废台数，从冗余料里扣 */
+  scrapQty: number
+  /** 报废超出冗余的缺口，>0 时必须补料才能继续上线 */
+  replenishQty: number
 }
 
 export interface StepProgress {

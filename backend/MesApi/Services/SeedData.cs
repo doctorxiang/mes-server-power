@@ -127,6 +127,7 @@ public static class SeedData
             new WorkOrder
             {
                 OrderNo = $"WO{today}001", ProductId = p1200.Id, LineId = lineA.Id, PlanQty = 300,
+                IssuedQty = MaterialPlanning.IssuedFor(300),   // 计划 300 → 发料 353（多备 53 套冗余）
                 Status = nameof(WorkOrderStatus.InProduction), Priority = 1,
                 PlannedStartUtc = now.AddHours(-6), DueDateUtc = now.AddDays(2),
                 CreatedByUserId = 2, ReleasedAtUtc = now.AddHours(-6), Remark = "客户加急订单"
@@ -134,6 +135,7 @@ public static class SeedData
             new WorkOrder
             {
                 OrderNo = $"WO{today}002", ProductId = p800.Id, LineId = lineA.Id, PlanQty = 500,
+                IssuedQty = MaterialPlanning.IssuedFor(500),
                 Status = nameof(WorkOrderStatus.InProduction), Priority = 2,
                 PlannedStartUtc = now.AddHours(-4), DueDateUtc = now.AddDays(3),
                 CreatedByUserId = 2, ReleasedAtUtc = now.AddHours(-4)
@@ -141,6 +143,7 @@ public static class SeedData
             new WorkOrder
             {
                 OrderNo = $"WO{today}003", ProductId = p2000.Id, LineId = lineB.Id, PlanQty = 120,
+                IssuedQty = MaterialPlanning.IssuedFor(120),
                 Status = nameof(WorkOrderStatus.InProduction), Priority = 1,
                 PlannedStartUtc = now.AddHours(-3), DueDateUtc = now.AddDays(1),
                 CreatedByUserId = 2, ReleasedAtUtc = now.AddHours(-3), Remark = "AI 服务器配套"
