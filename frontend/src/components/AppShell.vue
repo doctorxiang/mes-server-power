@@ -5,7 +5,7 @@ import NavIcon from '@/components/NavIcon.vue'
 import { useAuthStore } from '@/stores/auth'
 import { useTabsStore, type PageTab } from '@/stores/tabs'
 import { ROLE_LABELS } from '@/types'
-import { formatClock } from '@/utils/format'
+import { formatClock, formatClockDate } from '@/utils/format'
 
 defineProps<{ title?: string; subtitle?: string; wide?: boolean }>()
 
@@ -217,7 +217,8 @@ function onKeydown(e: KeyboardEvent) {
 }
 
 onMounted(() => {
-  timer = window.setInterval(() => (now.value = new Date()), 1000 * 20)
+  // 时钟要跟秒走：1 秒一跳，别用 20 秒（秒数会停在旧值上像卡住）
+  timer = window.setInterval(() => (now.value = new Date()), 1000)
   window.addEventListener('keydown', onKeydown)
 })
 
@@ -354,7 +355,10 @@ async function logout() {
         </div>
 
         <div class="topbar-meta">
-          <span class="mono">{{ formatClock(now) }}</span>
+          <span class="topbar-clock" title="当前时间（每 1 秒刷新）">
+            <span class="tc-date">{{ formatClockDate(now) }}</span>
+            <span class="tc-time mono">{{ formatClock(now) }}</span>
+          </span>
           <div class="user-chip">
             <div class="avatar">{{ initial }}</div>
             <div style="line-height: 1.2">

@@ -8,6 +8,13 @@ export function formatTime(iso: string | null | undefined): string {
   return `${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`
 }
 
+/** 顶栏时钟的日期部分：2026-11-12 周四（车间看时间先看日期，再对秒） */
+export function formatClockDate(d: Date): string {
+  const weekday = '日一二三四五六'[d.getDay()]
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} 周${weekday}`
+}
+
+/** 顶栏时钟的时间部分：时:分:秒（每秒刷新，等宽字体避免跳动） */
 export function formatClock(d: Date): string {
   return `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`
 }

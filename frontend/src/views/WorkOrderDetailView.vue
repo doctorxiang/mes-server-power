@@ -124,7 +124,7 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <AppShell :title="summary ? `工单 ${summary.orderNo}` : '工单详情'" subtitle="工序进度、在制分布与 SN 记录">
+  <AppShell :title="summary ? `工单 ${summary.orderNo}` : '工单详情'" subtitle="工序进度、在制分布与 SN 记录" wide>
     <template #actions>
       <div class="row">
         <button class="btn" @click="router.push('/work-orders')">返回列表</button>
@@ -336,58 +336,96 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
+/* ---------------- 详情页放大一档 ----------------
+   全局字号是按列表页的密度定的（13px 表格 / 14px 标题），详情页是「盯着看」的场景：
+   铺满整页宽度 + 数字放大，隔着半米也能读。只在本页覆盖，不动全局。 */
+:deep(.table) {
+  font-size: 14px;
+}
+
+:deep(.table th) {
+  font-size: 12.5px;
+  padding: 12px 18px;
+}
+
+:deep(.table td) {
+  padding: 13px 18px;
+}
+
+:deep(.small) {
+  font-size: 12.5px;
+}
+
+:deep(.card-head h3) {
+  font-size: 15.5px;
+}
+
+:deep(.card-head) {
+  padding: 14px 18px;
+}
+
 .order-head {
   display: flex;
   align-items: flex-start;
   gap: 26px;
   flex-wrap: wrap;
+  padding: 18px 20px;
+}
+
+.oh-left {
+  min-width: 260px;
 }
 
 .oh-left h2 {
-  font-size: 19px;
-  margin: 8px 0 4px;
-  letter-spacing: -0.2px;
+  font-size: 26px;
+  margin: 10px 0 5px;
+  letter-spacing: -0.4px;
 }
 
 .oh-stats {
   display: flex;
-  gap: 26px;
+  gap: 30px;
   margin-left: auto;
+  flex: 1 1 auto;
+  justify-content: space-between;
   flex-wrap: wrap;
 }
 
 .oh-stats div {
   display: flex;
   flex-direction: column;
+  gap: 2px;
 }
 
 .oh-stats span {
-  font-size: 11.5px;
+  font-size: 12.5px;
   color: var(--muted);
+  white-space: nowrap;
 }
 
 .oh-stats strong {
-  font-size: 21px;
+  font-size: 27px;
+  line-height: 1.15;
   font-variant-numeric: tabular-nums;
 }
 
 .overall {
-  padding: 12px 18px 14px;
+  padding: 14px 20px 16px;
   border-top: 1px solid var(--border);
 }
 
 .flow {
   display: flex;
-  gap: 8px;
+  gap: 10px;
   overflow-x: auto;
   padding-bottom: 4px;
 }
 
 .flow-step {
   position: relative;
-  min-width: 118px;
+  min-width: 138px;
   flex: 1;
-  padding: 11px 12px;
+  padding: 13px 14px;
   border: 1px solid var(--border);
   border-radius: 9px;
   background: var(--surface-2);
@@ -417,13 +455,13 @@ onBeforeUnmount(() => {
 }
 
 .fs-name {
-  font-size: 13px;
+  font-size: 14.5px;
   font-weight: 600;
 }
 
 .fs-nums {
-  margin-top: 7px;
-  font-size: 16px;
+  margin-top: 8px;
+  font-size: 19px;
   font-weight: 680;
   font-variant-numeric: tabular-nums;
 }
@@ -443,9 +481,9 @@ onBeforeUnmount(() => {
 }
 
 .fs-wip {
-  font-size: 11px;
+  font-size: 12px;
   color: var(--text-2);
-  margin-top: 2px;
+  margin-top: 3px;
 }
 
 .fs-arrow {
