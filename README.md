@@ -145,15 +145,16 @@ curl -X POST http://localhost:5080/api/demo/reset -H "Authorization: Bearer <adm
 | 扫码报工 | 扫码枪键盘输入回车即提交；首站扫码自动建 SN；工位记忆在本地；Enter 合格 / F2 不良；蜂鸣提示 |
 | 工序流转 | 严格按工艺路线推进：**跳站拦截、混单拦截、隔离品拦截**；完工自动判定工单完成 |
 | 不良处理 | 不良必选不良代码（17 个内置：虚焊/连锡/锡珠/极性反/耐压不良/老化掉电…）；隔离后进**维修站**闭环 |
-| 维修站 | 不良 SN 进出站管理：进站确认维修（措施/不良代码/备注）→ 修复出站**放回原判不良工序重测**；重复维修自动计数，**超过 2 次需管理员授权**否则只能报废；维修履历进追溯时间线 |
-| 工单管理 | 建单即下发（发料 = 计划，不预置冗余）；进度条（完工 ÷ 计划）、计划/发料/投入/完工四个数、9 道工序 WIP 分布、SN 列表、补料、关单/重开；**报废数与报废明细（SN/工序/不良/时间）在详情页看** |
+| 维修站 | 不良 SN 进出站管理：进站确认维修（措施/不良代码/备注）→ 修复出站**放回原判不良工序重测**；重复维修自动计数，**超过 2 次需管理员授权**否则只能报废；维修履历进追溯时间线；待维修队列与维修记录都支持**日期 / 产线 / 工序 / 不良代码 / 工单号**组合查询（复盘某工序某不良修了多少台） |
+| 工单管理 | 建单即下发（发料 = 计划，不预置冗余）；进度条（完工 ÷ 计划）、计划/发料/投入/完工四个数、9 道工序 WIP 分布、SN 列表、补料、关单/重开；**报废数与报废明细（SN/工序/不良/时间）在详情页看**；支持**产线 / 计划开工日期 / 关键字**查询；列表与详情都有**返修台数 / 返修次数**（台数按 SN 去重、次数含重复维修） |
 | SN 追溯 | 完整工序履历：每站结果、操作人、工位、时间、循环时长、不良代码 |
 | 车间看板 | 深色大屏：6 项 KPI、小时产出、WIP 分布、TOP 不良、产线对比、实时过站流、现场异常 |
 | 实时推送 | SignalR `/hubs/board`，扫码事件毫秒级推到看板；断线自动重连 + 8 秒轮询兜底 |
 | 现场异常 | 缺料/设备/品质异常上报与闭环处理 |
 | 账号权限 | 6 种角色（管理员/计划员/班组长/操作工/质检/只读），路由与接口双重校验 |
 | APS 排程 | 有限产能正排：按瓶颈工序节拍 + 良率折损算时产能，给出每单开工/完工与能否按期交付，甘特图展示 |
-| 良率分析 | 按工单 / 按机种：投入、完工、隔离、不良次数、良品率（完工÷投入）、直通率 FPY（一次通过）、工序良率、不良柏拉图 |
+| 工单报告 | 原良率分析，收进**工单管理子菜单**（`/work-orders/report`，旧 `/analysis` 自动跳转）：按工单 / 机种看投入、完工、隔离、不良次数、良品率（完工÷投入）、直通率 FPY（一次通过）、工序良率、不良柏拉图；支持**机种与工单号下钻** |
+| QC 抽检 | 针对**已包装成品**（末道包装工序完工）的出货前抽样检验：按批抽检录入（包装/外观/功能/安规），不合格必记不良代码；不报废不隔离（现场做法是加严抽检 + 回溯同批）；台账按日期 / 产线 / 机种 / 工单 / 判定检索，含抽检合格率与待抽检候选清单，SN 可一键跳转完整追溯 |
 | 物料与补料 | 发料 = 计划；发料用尽拦截上线（409）；报废一台补一台，缺口自动提示，班组长/计划员可追加发料 |
 | 工艺文件 | 图纸 / SOP / 检验报告上传归档（MinIO 或本地磁盘），按分类、机种、SN 检索下载 |
 | 任务调度 | Quartz.NET：维修超时预警（5min）、交期预警（30min）、夜间报表（02:30）、数据保养（03:30），支持手动补跑 |
@@ -228,20 +229,23 @@ curl -X POST http://localhost:5080/api/demo/reset -H "Authorization: Bearer <adm
 POST /api/auth/login|refresh|logout|change-password   认证（工号/用户名/邮箱均可登录）
 GET  /api/auth/users        POST /api/auth/users      账号管理（Admin）
 GET  /api/master/bootstrap                            主数据引导包
-GET  /api/work-orders       POST /api/work-orders     工单列表 / 建单
+GET  /api/work-orders       POST /api/work-orders     工单列表（status=active|done|单值，lineId/keyword/from/to 按计划开工日筛）/ 建单
 GET  /api/work-orders/{id}  POST /api/work-orders/{id}/status   详情 / release|close|reopen
 POST /api/production/scan                             扫码过站（核心）
 GET  /api/production/recent                           工位最近过站流水
 POST /api/production/hold-handle?sn=                  不良返修/报废（Leader/Qc，兼容旧入口）
-GET  /api/production/repair/pending                   维修站待维修队列（Leader/Qc）
+GET  /api/production/repair/pending                   维修站待维修队列（from/to/lineId/stepId/defectCode/orderNo 组合筛选）
+GET  /api/production/repair/history                   维修历史（条件同队列 + status；复盘某工序某不良）
 POST /api/production/repair/checkin                   维修站进站（重复维修超上限需 force=true 管理员授权）
 POST /api/production/repair/checkout                  维修站出站（repaired=放回原工序重测 / scrap=报废）
+GET  /api/qc/inspections        POST /api/qc/inspections    QC 抽检台账（含汇总）/ 录入（仅已包装成品，Leader/Qc）
+GET  /api/qc/candidates                               待抽检候选（已包装完工 SN，含已抽次数）
 GET  /api/trace/{sn}                                  SN 追溯（含维修记录时间线）
 GET  /api/dashboard?lineId=&date=                     看板聚合
 GET  /api/exceptions        POST /api/exceptions      异常列表 / 上报
 POST /api/exceptions/{id}/close                       异常闭环
 POST /api/aps/run                               APS 排程（includeDraft=true 含草稿单）
-GET  /api/analysis/yield?by=order|product       良率分析（工单 / 机种维度）
+GET  /api/analysis/yield?by=order|product&product=&order=   工单报告（工单 / 机种维度，支持机种与工单号下钻）
 GET  /api/files     POST /api/files             工艺文件列表 / 上传（multipart，≤20MB）
 GET  /api/files/{id}/content                   文件下载
 DELETE /api/files/{id}                         删除文件（Admin）
@@ -256,11 +260,12 @@ GET  /health/live  /health/ready                      探活（含 infra 中间�
 GET  /docs                                            内网接口文档（无外网依赖）
 ```
 
-调试文件：`backend/MesApi.http`；接口冒烟脚本：`bash backend/test-api.sh`（52 项断言）；
+调试文件：`backend/MesApi.http`；接口冒烟脚本：`bash backend/test-api.sh`（70 项断言）；
 平台健壮性冒烟：`python scripts/smoke_platform.py`（17 项：健康检查/审计/链路 Id/404 语义）；
-浏览器端到端：`node .e2e/e2e.mjs`（18 项）+ `node .e2e/repair-e2e.mjs`（维修站 7 项，含截图）。
+浏览器端到端：`node .e2e/e2e.mjs`（18 项）+ `node .e2e/repair-e2e.mjs`（维修站 7 项，含截图）+
+`node .e2e/features-e2e.mjs`（查询条件 / 工单报告 / 维修站筛选 / QC 抽检 21 项，含截图）。
 
-## 数据模型（16 张核心表）
+## 数据模型（17 张核心表）
 
 ```
 users / refresh_tokens                  账号与 JWT 刷新令牌（PBKDF2-SHA256 21 万次迭代）
@@ -271,6 +276,7 @@ work_order                              工单（状态机 Draft→Released→In
 serial_unit                             SN 档案（当前工序、状态：在制/隔离/完工/报废，乐观并发版本号）
 sn_move_log                             过站流水（只追加；追溯与报表唯一事实来源；含幂等键/生产日期/小时/班次）
 repair_record                           维修记录（第 N 次维修、不良工序/代码、措施、进出站人与时间；SN+RepairNo 唯一）
+qc_inspection                           QC 抽检台账（已包装成品；类别/判定/不良/抽检人；不推进工序、不改 SN 状态）
 exception_event                         现场异常
 audit_log                               操作审计（脱敏请求体、状态码、耗时、终端 IP、请求号；默认留存 90 天）
 file_document                           文件档案（分类/机种/工单/SN + 对象键，内容在 MinIO）

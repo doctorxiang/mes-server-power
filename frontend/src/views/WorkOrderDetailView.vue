@@ -52,6 +52,13 @@ const scrapRate = computed(() => {
   return ((s.scrapQty * 100) / s.inputQty).toFixed(2)
 })
 
+/** 返修率：进过维修站的台数 ÷ 投入（修两次的只算一台，否则会重复计） */
+const repairRate = computed(() => {
+  const s = summary.value
+  if (!s || !s.inputQty) return '0.00'
+  return ((s.repairUnits * 100) / s.inputQty).toFixed(1)
+})
+
 async function submitReplenish() {
   if (!replenishQty.value || replenishQty.value < 1) return
   replenishing.value = true
@@ -161,6 +168,10 @@ onBeforeUnmount(() => {
               <strong style="color: var(--danger)">{{ summary.scrapQty }}</strong>
             </div>
             <div><span>补料</span><strong>{{ replenished }}</strong></div>
+            <div title="返修台数按 SN 去重，返修次数含同一台的重复维修">
+              <span>返修 <em class="small muted" style="font-style: normal">{{ repairRate }}%</em></span>
+              <strong style="color: var(--warn, #d97706)">{{ summary.repairUnits }}<small class="small muted"> 台 / {{ summary.repairTimes }} 次</small></strong>
+            </div>
             <div><span>不良隔离</span><strong style="color: var(--warn, #d97706)">{{ summary.holdQty }}</strong></div>
             <div><span>直通率 FPY</span><strong>{{ detail?.fpy ?? 0 }}%</strong></div>
           </div>

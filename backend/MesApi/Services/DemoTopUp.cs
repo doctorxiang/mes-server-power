@@ -83,6 +83,7 @@ public static class DemoTopUp
         var history = await AddCompletedOrdersAsync(ctx, ct);
         var wip = await AddInProductionOrdersAsync(ctx, ct);
         await AddOpenExceptionsAsync(ctx, ct);
+        var qcSamples = await AddQcSamplesAsync(db, rnd, ct);
 
         var (input1, done1, fpy1) = await SnapshotAsync(db, ct);
 
@@ -93,7 +94,8 @@ public static class DemoTopUp
 
         var summary = $"新增 {ordersCreated} 张工单（{wip.Orders} 张在制 + {history.Orders} 张已完工）/ " +
                       $"{unitsCreated} 台 SN / {logsCreated} 条过站流水 / {repairsCreated} 条维修记录 / " +
-                      $"报废 {history.Scrap + wip.Scrap} 台；在制单待补料 {wip.ReplenishNeed} 套";
+                      $"报废 {history.Scrap + wip.Scrap} 台；在制单待补料 {wip.ReplenishNeed} 套；" +
+                      $"QC 抽检 {qcSamples} 台成品";
 
         logger.LogInformation("演示数据生成完成：{Summary}；良品率 {Before}% → {After}%，直通率 FPY {Fpy}%",
             summary, Pct(done0, input0), Pct(done1, input1), Pct(fpy1, input1));
@@ -103,9 +105,101 @@ public static class DemoTopUp
             Pct(done0, input0), Pct(done1, input1), Pct(fpy1, input1), summary);
     }
 
-    /// <summary>清空生产数据（工单 / SN / 流水 / 维修 / 异常 / 日报），主数据与账号保留。</summary>
+    // ---------------- 0. QC 抽检：已包装成品按批抽样 ----------------
+
+    /// <summary>
+    /// 每张已完工工单抽 2-4 台成品入库前抽检：以包装/外观为主，少量功能/安规，
+    /// 不良率控制在 3% 左右（成品端抽检不合格比产线测试少得多）。
+    /// 幂等：库里已有抽检记录就整体跳过 —— 抽检是证据，不能重复补造。
+    /// </summary>
+    private static async Task<int> AddQcSamplesAsync(MesDbContext db, Random rnd, CancellationToken ct)
+    {
+        if (await db.QcInspections.AnyAsync(ct)) return 0;
+
+        var orders = await db.WorkOrders.AsNoTracking()
+            .Where(w => w.Status == nameof(WorkOrderStatus.Completed))
+            .OrderBy(w => w.Id)
+            .Select(w => new { w.Id, w.LineId, w.ProductId })
+            .ToListAsync(ct);
+
+        if (orders.Count == 0) return 0;
+
+        var defects = await db.DefectCodes.AsNoTracking().ToListAsync(ct);
+        if (defects.Count == 0) return 0;
+
+        var rows = new List<QcInspection>();
+
+        foreach (var order in orders)
+        {
+            var units = await db.Units.AsNoTracking()
+                .Where(u => u.WorkOrderId == order.Id && u.Status == nameof(UnitStatus.Completed))
+                .OrderBy(u => u.Id)
+                .Select(u => new { u.Id, u.CompletedAtUtc })
+                .ToListAsync(ct);
+
+            if (units.Count == 0) continue;
+
+            var take = Math.Min(units.Count, rnd.Next(2, 5));
+            // 从这一批的成品里等距取几台，模拟"开箱首件 / 中间 / 末件"的抽样习惯
+            for (var k = 0; k < take; k++)
+            {
+                var idx = (int)((k + 0.5) * units.Count / take);
+                var unit = units[Math.Clamp(idx, 0, units.Count - 1)];
+                var at = (unit.CompletedAtUtc ?? DateTime.UtcNow).AddMinutes(rnd.Next(10, 90));
+
+                // 包装占比最高（抽检本来就是拆箱复核），安规只抽一两台
+                var category = rnd.Next(100) switch
+                {
+                    < 45 => QcCategories.Package,
+                    < 80 => QcCategories.Appearance,
+                    < 95 => QcCategories.Function,
+                    _ => QcCategories.Safety
+                };
+
+                var fail = rnd.NextDouble() < 0.03;
+                // 不良要跟抽检类别对得上：包装抽检不会记"无输出"，安规也不会记"标签错误"
+                var failCategory = category switch
+                {
+                    QcCategories.Package => "包装",
+                    QcCategories.Appearance => "外观",
+                    QcCategories.Safety => "电气",
+                    _ => "电气"
+                };
+                var pool = defects.Where(d => d.Category == failCategory).ToList();
+                if (category == QcCategories.Safety)
+                    pool = pool.Where(d => d.Name.Contains("耐压")).ToList();
+                var defect = fail && pool.Count > 0 ? pool[rnd.Next(pool.Count)] : null;
+                if (defect is null) fail = false;
+
+                rows.Add(new QcInspection
+                {
+                    SerialUnitId = unit.Id,
+                    WorkOrderId = order.Id,
+                    LineId = order.LineId,
+                    ProductId = order.ProductId,
+                    Category = category,
+                    Result = fail ? "Fail" : "Pass",
+                    DefectCodeId = defect?.Id,
+                    Remark = fail ? "开箱复核不合格，已按加严抽检处理并回溯同批" : null,
+                    InspectorId = 6,
+                    InspectorName = "周敏",
+                    ProductionDate = FactoryClock.DateOf(at),
+                    InspectedAtUtc = at
+                });
+            }
+        }
+
+        if (rows.Count == 0) return 0;
+
+        db.QcInspections.AddRange(rows);
+        await db.SaveChangesAsync(ct);
+        return rows.Count;
+    }
+
+    /// <summary>清空生产数据（工单 / SN / 流水 / 维修 / 抽检 / 异常 / 日报），主数据与账号保留。</summary>
     private static async Task ResetAsync(MesDbContext db, CancellationToken ct)
     {
+        await db.QcInspections.ExecuteDeleteAsync(ct);
         await db.RepairRecords.ExecuteDeleteAsync(ct);
         await db.MoveLogs.ExecuteDeleteAsync(ct);
         await db.Units.ExecuteDeleteAsync(ct);

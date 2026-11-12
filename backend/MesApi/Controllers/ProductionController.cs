@@ -34,12 +34,28 @@ public class ProductionController(IProductionService production) : ControllerBas
     public async Task<ActionResult<UnitActionResponse>> HandleHold([FromBody] HandleHoldRequest request, [FromQuery] string sn, CancellationToken ct)
         => Ok(await production.HandleHoldAsync(sn, request, User.GetUserId(), User.GetDisplayName(), ct));
 
-    /// <summary>维修站：待维修队列（隔离中的 SN，含维修次数与在修标记）。</summary>
+    /// <summary>
+    /// 维修站：待维修队列（隔离中的 SN，含维修次数与在修标记）。
+    /// 筛选：日期（隔离时间）/ 产线 / 工序 / 不良代码 / 工单号，任意组合。
+    /// </summary>
     [HttpGet("repair/pending")]
     [Authorize(Roles = $"{Roles.Admin},{Roles.Leader},{Roles.Qc}")]
     public async Task<ActionResult<IReadOnlyList<RepairPendingRow>>> RepairPending(
-        [FromQuery] int limit, [FromQuery] string? orderNo, [FromQuery] string? product, CancellationToken ct)
-        => Ok(await production.RepairPendingAsync(limit, orderNo, product, ct));
+        [FromQuery] int? limit, [FromQuery] int? lineId, [FromQuery] int? stepId,
+        [FromQuery] string? defectCode, [FromQuery] string? orderNo,
+        [FromQuery] DateTime? from, [FromQuery] DateTime? to, CancellationToken ct)
+        => Ok(await production.RepairPendingAsync(
+            new RepairFilter(lineId, stepId, defectCode, orderNo, from, to, null, limit ?? 50), ct));
+
+    /// <summary>维修站：维修历史（复盘"某工序某不良到底修了多少台"，条件与队列一致 + 状态）。</summary>
+    [HttpGet("repair/history")]
+    [Authorize(Roles = $"{Roles.Admin},{Roles.Leader},{Roles.Qc}")]
+    public async Task<ActionResult<IReadOnlyList<RepairHistoryRow>>> RepairHistory(
+        [FromQuery] int? limit, [FromQuery] int? lineId, [FromQuery] int? stepId,
+        [FromQuery] string? defectCode, [FromQuery] string? orderNo, [FromQuery] string? status,
+        [FromQuery] DateTime? from, [FromQuery] DateTime? to, CancellationToken ct)
+        => Ok(await production.RepairHistoryAsync(
+            new RepairFilter(lineId, stepId, defectCode, orderNo, from, to, status, limit ?? 50), ct));
 
     /// <summary>维修站进站：SN 确认维修，开维修记录（重复维修超上限需管理员 force）。</summary>
     [HttpPost("repair/checkin")]

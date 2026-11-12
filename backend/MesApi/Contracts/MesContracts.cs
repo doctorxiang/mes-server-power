@@ -41,12 +41,14 @@ public record ReplenishRequest(
 /// 工单列表行。计划 / 发料 / 投入 / 完工 / 报废五个数字的关系：
 /// 发料 = 计划（不预置冗余），报废一台补一台，所以完工单通常是 发料 = 计划 + 报废；
 /// 投入 = 已上线 SN（只增不减），完工达到计划即 100%，ReplenishQty &gt; 0 表示还要补料。
+/// RepairUnits / RepairTimes 是返修口径：进过维修站的台数（去重）与维修次数（含重复维修）。
 /// </summary>
 public record WorkOrderListItem(
     int Id, string OrderNo, string ProductCode, string ProductName, int LineId, string LineName,
     int PlanQty, int InputQty, int CompletedQty, int HoldQty, string Status,
     int Priority, DateTime PlannedStartUtc, DateTime DueDateUtc, DateTime CreatedAtUtc,
-    int IssuedQty, int ScrapQty, int ReplenishQty);
+    int IssuedQty, int ScrapQty, int ReplenishQty,
+    int RepairUnits, int RepairTimes);
 
 public record StepProgressDto(int StepId, string StepCode, string StepName, int Seq, bool IsInspection, int PassQty, int FailQty, int WipQty);
 
@@ -134,6 +136,50 @@ public record RepairRecordRow(
     int Id, string Sn, int RepairNo, string SourceStepName, string? DefectName,
     string Action, string Status, string OperatorName, string? StationCode,
     string? CheckoutByName, DateTime StartedAtUtc, DateTime? CompletedAtUtc, string? Remark);
+
+/// <summary>
+/// 维修站筛条件：日期 + 产线 + 工序 + 不良代码 + 工单号，任意组合。
+/// 待维修队列与维修历史共用同一份条件，维修员从一个 Tab 切到另一个不用重新填。
+/// </summary>
+public record RepairFilter(
+    int? LineId, int? StepId, string? DefectCode, string? OrderNo,
+    DateTime? FromUtc, DateTime? ToUtc, string? Status, int Limit = 50);
+
+/// <summary>
+/// 维修历史行：维修站的"查问题"用这张表，按日期 / 产线 / 工序 / 不良代码翻历史，
+/// 比只看待修队列有用 —— 队列只有当下，复盘虚焊到底折腾了多少台得看历史。
+/// </summary>
+public record RepairHistoryRow(
+    int Id, string Sn, string OrderNo, string ProductName, string LineName,
+    string SourceStepName, int RepairNo, string? DefectCode, string? DefectName,
+    string Action, string Status, string OperatorName, string? CheckoutByName,
+    DateTime StartedAtUtc, DateTime? CompletedAtUtc, string? Remark);
+
+// ---------------- QC 抽检（已包装成品）----------------
+
+/// <summary>抽检录入：扫一台已包装成品的 SN，记录类别与判定。</summary>
+public record CreateQcInspectionRequest(
+    [Required(ErrorMessage = "请扫描 SN")] string Sn,
+    [Required(ErrorMessage = "请选择抽检类别")] string Category,
+    [Required(ErrorMessage = "请选择判定结果")] string Result,
+    string? DefectCode,
+    [StringLength(256)] string? Remark);
+
+/// <summary>抽检记录行：SN 保留下来，点进去能看这一台的完整工序履历。</summary>
+public record QcInspectionRow(
+    int Id, string Sn, string OrderNo, string ProductName, string LineName, string Category,
+    string Result, string? DefectCode, string? DefectName, string InspectorName,
+    DateTime InspectedAtUtc, string? Remark);
+
+/// <summary>抽检汇总：抽检台数 / 合格 / 不合格 / 抽检合格率 / 覆盖工单数。</summary>
+public record QcSummary(int Inspected, int Pass, int Fail, double PassRate, int Orders, int Lines);
+
+public record QcInspectionResult(QcSummary Summary, IReadOnlyList<QcInspectionRow> Rows);
+
+/// <summary>待抽检候选：已包装完工、还没抽过的成品（InspectedTimes = 已抽检次数）。</summary>
+public record QcCandidateRow(
+    long UnitId, string Sn, string OrderNo, string ProductName, string LineName,
+    DateTime? CompletedAtUtc, int InspectedTimes);
 
 // ---------------- 追溯 ----------------
 

@@ -15,7 +15,14 @@ const router = createRouter({
       path: '/work-orders',
       name: 'work-orders',
       component: () => import('@/views/WorkOrdersView.vue'),
-      meta: { title: '工单管理' },
+      meta: { title: '工单列表' },
+    },
+    // 工单报告挂在工单管理下（子菜单），路径写在 :id 前面，避免被当成工单 Id
+    {
+      path: '/work-orders/report',
+      name: 'work-order-report',
+      component: () => import('@/views/AnalysisView.vue'),
+      meta: { title: '工单报告', roles: ['Admin', 'Planner', 'Leader', 'Qc', 'Viewer'] },
     },
     {
       path: '/work-orders/:id',
@@ -48,11 +55,13 @@ const router = createRouter({
       meta: { title: '维修站', roles: ['Admin', 'Leader', 'Qc'] },
     },
     {
-      path: '/analysis',
-      name: 'analysis',
-      component: () => import('@/views/AnalysisView.vue'),
-      meta: { title: '良率分析', roles: ['Admin', 'Planner', 'Leader', 'Qc', 'Viewer'] },
+      path: '/qc',
+      name: 'qc',
+      component: () => import('@/views/QcView.vue'),
+      meta: { title: 'QC 抽检', roles: ['Admin', 'Leader', 'Qc', 'Viewer'] },
     },
+    // 老的收藏夹 / 文档链接：良率分析已并入工单管理下的「工单报告」
+    { path: '/analysis', redirect: '/work-orders/report' },
     {
       path: '/aps',
       name: 'aps',

@@ -1,9 +1,9 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import AppShell from '@/components/AppShell.vue'
-import { analysisApi } from '@/api/mes'
+import { analysisApi, mesApi } from '@/api/mes'
 import { parseApiError } from '@/api/client'
-import type { YieldRow } from '@/types'
+import type { MasterBootstrap, YieldRow } from '@/types'
 
 const by = ref<'order' | 'product'>('order')
 const range = ref('30d')
@@ -11,6 +11,11 @@ const rows = ref<YieldRow[]>([])
 const loading = ref(false)
 const error = ref('')
 const selected = ref<YieldRow | null>(null)
+
+// 机种 / 工单下钻：报告页的主线是"先看机种整体，再落到哪一单掉链子"
+const boot = ref<MasterBootstrap | null>(null)
+const productCode = ref('')
+const orderNo = ref('')
 
 const summary = computed(() => {
   const list = rows.value
@@ -55,23 +60,44 @@ function rangeParams() {
   return { from: from.toISOString(), to: new Date().toISOString() }
 }
 
+// 请求序号：连点筛选时只认最后一次的结果，避免先发的慢请求把后来的结果覆盖掉
+let loadSeq = 0
+
 async function load() {
+  const seq = ++loadSeq
   loading.value = true
   error.value = ''
   try {
     const { from, to } = rangeParams()
-    const { data } = await analysisApi.yield(by.value, from, to)
+    const { data } = await analysisApi.yield({
+      by: by.value,
+      from,
+      to,
+      product: productCode.value || undefined,
+      order: orderNo.value.trim() || undefined,
+    })
+    if (seq !== loadSeq) return
     rows.value = [...data.rows].sort((a, b) => a.yieldPercent - b.yieldPercent)
     selected.value = rows.value[0] ?? null
   } catch (e) {
+    if (seq !== loadSeq) return
     error.value = parseApiError(e)
   } finally {
-    loading.value = false
+    if (seq === loadSeq) loading.value = false
   }
 }
 
 function switchBy(v: 'order' | 'product') {
   by.value = v
+  // 按机种看的时候，工单号筛选没有意义（会把它筛成一行），清掉避免误读
+  if (v === 'product') orderNo.value = ''
+  load()
+}
+
+function resetFilters() {
+  productCode.value = ''
+  orderNo.value = ''
+  range.value = '30d'
   load()
 }
 
@@ -85,11 +111,19 @@ function badgeClass(percent: number) {
   return t === 'ok' ? 'badge-ok' : t === 'warn' ? 'badge-warn' : 'badge-danger'
 }
 
-onMounted(load)
+onMounted(async () => {
+  try {
+    const { data } = await mesApi.bootstrap()
+    boot.value = data
+  } catch {
+    // 机种清单拿不到不影响主报表
+  }
+  load()
+})
 </script>
 
 <template>
-  <AppShell title="良率分析" subtitle="按工单 / 机种看良品率与直通率（FPY），定位最该改善的工序与不良">
+  <AppShell title="工单报告" subtitle="按工单 / 机种看良品率与直通率（FPY），定位最该改善的工序与不良">
     <div v-if="error" class="alert alert-error" style="margin-bottom: 14px">{{ error }}</div>
 
     <section class="card" style="margin-bottom: 14px">
@@ -98,12 +132,27 @@ onMounted(load)
           <button class="seg-btn" :class="{ active: by === 'order' }" @click="switchBy('order')">按工单</button>
           <button class="seg-btn" :class="{ active: by === 'product' }" @click="switchBy('product')">按机种</button>
         </div>
+        <select v-model="productCode" class="select" style="width: 210px" @change="load">
+          <option value="">全部机种</option>
+          <option v-for="p in boot?.products ?? []" :key="p.id" :value="p.code">{{ p.code }} · {{ p.name }}</option>
+        </select>
+        <input
+          v-model="orderNo"
+          class="input"
+          style="max-width: 200px"
+          :disabled="by === 'product'"
+          :placeholder="by === 'product' ? '按机种查看时不按工单筛' : '工单号，如 WO2026'"
+          @keyup.enter="load"
+        />
         <select v-model="range" class="select" style="width: 140px" @change="load">
           <option value="7d">近 7 天</option>
           <option value="30d">近 30 天</option>
           <option value="all">全部</option>
         </select>
         <button class="btn" :disabled="loading" @click="load">{{ loading ? '计算中…' : '刷新' }}</button>
+        <button class="btn btn-ghost" @click="resetFilters">重置</button>
+      </div>
+      <div class="card-body" style="padding-top: 0">
         <span class="small muted">良品率 = 完工 ÷ 投入 · 直通率 FPY = 一次没判不良就完工 ÷ 投入（差出来的就是返修救回的）</span>
       </div>
     </section>
@@ -133,7 +182,7 @@ onMounted(load)
           <span class="small muted">点击一行看工序明细</span>
         </div>
         <div class="card-body" style="padding-top: 0">
-          <div v-if="!rows.length && !loading" class="empty">没有数据，换个时间范围试试</div>
+          <div v-if="!rows.length && !loading" class="empty">没有数据，换个时间范围、机种或工单号试试</div>
           <table v-else class="table">
             <thead>
               <tr>

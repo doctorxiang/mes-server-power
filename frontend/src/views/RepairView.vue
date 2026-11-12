@@ -4,7 +4,7 @@ import AppShell from '@/components/AppShell.vue'
 import { mesApi } from '@/api/mes'
 import { parseApiError } from '@/api/client'
 import { readStation, saveStation } from '@/api/session'
-import type { MasterBootstrap, RepairPendingRow, RepairRecordRow, TraceResponse } from '@/types'
+import type { MasterBootstrap, RepairHistoryRow, RepairPendingRow, RepairRecordRow, TraceResponse } from '@/types'
 import { REPAIR_ACTION_LABELS, REPAIR_STATUS_LABELS } from '@/types'
 import { formatTime } from '@/utils/format'
 
@@ -39,21 +39,40 @@ const lastFailDefect = computed(() => {
 })
 const isHold = computed(() => unit.value?.status === 'Hold')
 
-// 队列筛选：工单号 / 机种（不做"点 SN 自动查询"，避免维修员误触把正在看的单子顶掉）
+// 队列筛选：日期（隔离时间）/ 产线 / 工序 / 不良代码 / 工单号
+// 不做"点 SN 自动查询"，避免维修员误触把正在看的单子顶掉
+const tab = ref<'pending' | 'history'>('pending')
 const filterOrderNo = ref('')
-const filterProduct = ref('')
+const filterLineId = ref(0)
+const filterStepId = ref(0)
+const filterDefectCode = ref('')
+const filterFrom = ref('')
+const filterTo = ref('')
+const filterStatus = ref('')
 const queueLoading = ref(false)
+const history = ref<RepairHistoryRow[]>([])
+const historyLoading = ref(false)
+
+const hasFilter = computed(() =>
+  Boolean(filterOrderNo.value || filterLineId.value || filterStepId.value || filterDefectCode.value || filterFrom.value || filterTo.value || filterStatus.value),
+)
+
+function queryParams() {
+  return {
+    limit: 100,
+    orderNo: filterOrderNo.value.trim() || undefined,
+    lineId: filterLineId.value || undefined,
+    stepId: filterStepId.value || undefined,
+    defectCode: filterDefectCode.value || undefined,
+    from: filterFrom.value || undefined,
+    to: filterTo.value || undefined,
+  }
+}
 
 async function loadQueue() {
   queueLoading.value = true
   try {
-    queue.value = (
-      await mesApi.repairPending(
-        50,
-        filterOrderNo.value.trim() || undefined,
-        filterProduct.value || undefined,
-      )
-    ).data
+    queue.value = (await mesApi.repairPending(queryParams())).data
   } catch {
     // 队列刷新失败不打断操作
   } finally {
@@ -61,10 +80,39 @@ async function loadQueue() {
   }
 }
 
+async function loadHistory() {
+  historyLoading.value = true
+  try {
+    history.value = (
+      await mesApi.repairHistory({ ...queryParams(), status: filterStatus.value || undefined })
+    ).data
+  } catch (e) {
+    feedback.value = { kind: 'fail', title: '维修记录查询失败', detail: parseApiError(e) }
+  } finally {
+    historyLoading.value = false
+  }
+}
+
+async function switchTab(next: 'pending' | 'history') {
+  tab.value = next
+  if (next === 'history') await loadHistory()
+  else await loadQueue()
+}
+
+async function search() {
+  if (tab.value === 'history') await loadHistory()
+  else await loadQueue()
+}
+
 function resetFilters() {
   filterOrderNo.value = ''
-  filterProduct.value = ''
-  loadQueue()
+  filterLineId.value = 0
+  filterStepId.value = 0
+  filterDefectCode.value = ''
+  filterFrom.value = ''
+  filterTo.value = ''
+  filterStatus.value = ''
+  search()
 }
 
 async function loadAll() {
@@ -167,7 +215,10 @@ function onStationChange() {
 let queueTimer: number | undefined
 onMounted(() => {
   loadAll()
-  queueTimer = window.setInterval(loadQueue, 15000)
+  // 只在"待维修"Tab 自动刷新：翻历史时列表突然跳动很难受
+  queueTimer = window.setInterval(() => {
+    if (tab.value === 'pending') loadQueue()
+  }, 15000)
 })
 onBeforeUnmount(() => {
   if (queueTimer) window.clearInterval(queueTimer)
@@ -334,73 +385,159 @@ onBeforeUnmount(() => {
           </div>
         </section>
 
-        <!-- 右/下：待维修队列 -->
+        <!-- 右/下：待维修队列 / 维修记录 -->
         <section class="card span-2">
           <div class="card-head">
-            <h3>待维修队列</h3>
-            <span class="small muted">隔离中的 SN · 15 秒自动刷新</span>
+            <h3>
+              维修查询
+              <span class="small muted" style="font-weight: 400">
+                {{ tab === 'pending' ? `待维修 ${queue.length} 台` : `维修记录 ${history.length} 条` }}
+              </span>
+            </h3>
+            <div class="tabs" style="margin: 0; border: none">
+              <button class="tab" :class="{ active: tab === 'pending' }" @click="switchTab('pending')">待维修队列</button>
+              <button class="tab" :class="{ active: tab === 'history' }" @click="switchTab('history')">维修记录</button>
+            </div>
           </div>
           <div class="card-body">
             <div class="queue-filters">
               <label>
                 <span class="small muted">工单号</span>
-                <input
-                  v-model="filterOrderNo"
-                  class="input"
-                  placeholder="如 WO-2026"
-                  @keyup.enter="loadQueue()"
-                />
+                <input v-model="filterOrderNo" class="input" placeholder="如 WO2026" @keyup.enter="search()" />
               </label>
               <label>
-                <span class="small muted">机种</span>
-                <select v-model="filterProduct" class="input" @change="loadQueue()">
-                  <option value="">全部机种</option>
-                  <option v-for="p in boot?.products ?? []" :key="p.id" :value="p.code">
-                    {{ p.code }} · {{ p.name }}
-                  </option>
+                <span class="small muted">产线</span>
+                <select v-model.number="filterLineId" class="input" @change="search()">
+                  <option :value="0">全部产线</option>
+                  <option v-for="l in boot?.lines ?? []" :key="l.id" :value="l.id">{{ l.name }}</option>
                 </select>
               </label>
-              <button class="btn" :disabled="queueLoading" @click="loadQueue()">
-                {{ queueLoading ? '查询中…' : '查询' }}
+              <label>
+                <span class="small muted">{{ tab === 'pending' ? '隔离所在工序' : '判不良工序' }}</span>
+                <select v-model.number="filterStepId" class="input" @change="search()">
+                  <option :value="0">全部工序</option>
+                  <option v-for="s in boot?.steps ?? []" :key="s.id" :value="s.id">{{ s.seq }}. {{ s.name }}</option>
+                </select>
+              </label>
+              <label>
+                <span class="small muted">不良代码</span>
+                <select v-model="filterDefectCode" class="input" @change="search()">
+                  <option value="">全部不良</option>
+                  <option v-for="d in boot?.defectCodes ?? []" :key="d.code" :value="d.code">{{ d.code }} · {{ d.name }}</option>
+                </select>
+              </label>
+              <label>
+                <span class="small muted">{{ tab === 'pending' ? '隔离日期 从' : '进站日期 从' }}</span>
+                <input v-model="filterFrom" type="date" class="input" @change="search()" />
+              </label>
+              <label>
+                <span class="small muted">到</span>
+                <input v-model="filterTo" type="date" class="input" @change="search()" />
+              </label>
+              <label v-if="tab === 'history'">
+                <span class="small muted">结果</span>
+                <select v-model="filterStatus" class="input" @change="search()">
+                  <option value="">全部</option>
+                  <option value="InProgress">维修中</option>
+                  <option value="Repaired">修复出站</option>
+                  <option value="Scrapped">报废出站</option>
+                </select>
+              </label>
+              <button class="btn" :disabled="queueLoading || historyLoading" @click="search()">
+                {{ queueLoading || historyLoading ? '查询中…' : '查询' }}
               </button>
-              <button class="btn btn-ghost" @click="resetFilters">重置</button>
+              <button class="btn btn-ghost" :disabled="!hasFilter" @click="resetFilters">重置</button>
             </div>
 
-            <div v-if="!queue.length" class="empty">
-              {{ filterOrderNo || filterProduct ? '该条件下没有待维修的 SN' : '当前没有待维修的 SN' }}
-            </div>
-            <table v-else class="table">
-              <thead>
-                <tr>
-                  <th>SN</th>
-                  <th>工单</th>
-                  <th>机种</th>
-                  <th>产线</th>
-                  <th>不良工序</th>
-                  <th>不良代码</th>
-                  <th>已维修</th>
-                  <th>隔离时间</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr v-for="row in queue" :key="row.unitId">
-                  <td class="mono">
-                    {{ row.sn }}
-                    <span v-if="row.repairing" class="badge badge-warn" style="margin-left: 6px">维修中</span>
-                  </td>
-                  <td class="mono">{{ row.orderNo }}</td>
-                  <td>{{ row.productName }}</td>
-                  <td>{{ row.lineName }}</td>
-                  <td>{{ row.currentStepName }}</td>
-                  <td>
-                    <span v-if="row.defectName" class="badge badge-warn">{{ row.defectCode }} · {{ row.defectName }}</span>
-                    <span v-else class="muted small">—</span>
-                  </td>
-                  <td><span :class="{ 'rep-warn': row.repairCount > 0 }">{{ row.repairCount }} 次</span></td>
-                  <td class="small muted">{{ formatTime(row.failedAtUtc) }}</td>
-                </tr>
-              </tbody>
-            </table>
+            <template v-if="tab === 'pending'">
+              <div v-if="!queue.length" class="empty">
+                {{ hasFilter ? '该条件下没有待维修的 SN' : '当前没有待维修的 SN' }}
+              </div>
+              <table v-else class="table">
+                <thead>
+                  <tr>
+                    <th>SN</th>
+                    <th>工单</th>
+                    <th>机种</th>
+                    <th>产线</th>
+                    <th>不良工序</th>
+                    <th>不良代码</th>
+                    <th>已维修</th>
+                    <th>隔离时间</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="row in queue" :key="row.unitId">
+                    <td class="mono">
+                      {{ row.sn }}
+                      <span v-if="row.repairing" class="badge badge-warn" style="margin-left: 6px">维修中</span>
+                    </td>
+                    <td class="mono">{{ row.orderNo }}</td>
+                    <td>{{ row.productName }}</td>
+                    <td>{{ row.lineName }}</td>
+                    <td>{{ row.currentStepName }}</td>
+                    <td>
+                      <span v-if="row.defectName" class="badge badge-warn">{{ row.defectCode }} · {{ row.defectName }}</span>
+                      <span v-else class="muted small">—</span>
+                    </td>
+                    <td><span :class="{ 'rep-warn': row.repairCount > 0 }">{{ row.repairCount }} 次</span></td>
+                    <td class="small muted">{{ formatTime(row.failedAtUtc) }}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </template>
+
+            <template v-else>
+              <div v-if="!history.length" class="empty">
+                {{ hasFilter ? '该条件下没有维修记录' : '还没有维修记录' }}
+              </div>
+              <table v-else class="table">
+                <thead>
+                  <tr>
+                    <th>SN</th>
+                    <th>工单</th>
+                    <th>机种 / 产线</th>
+                    <th>不良工序</th>
+                    <th>不良代码</th>
+                    <th>措施</th>
+                    <th>结果</th>
+                    <th>进站 / 出站</th>
+                    <th>人</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="r in history" :key="r.id">
+                    <td class="mono">{{ r.sn }}<span class="small muted"> · #{{ r.repairNo }}</span></td>
+                    <td class="mono">{{ r.orderNo }}</td>
+                    <td class="small">
+                      <div>{{ r.productName }}</div>
+                      <div class="muted">{{ r.lineName }}</div>
+                    </td>
+                    <td class="small">{{ r.sourceStepName }}</td>
+                    <td>
+                      <span v-if="r.defectName" class="badge badge-warn">{{ r.defectCode }} · {{ r.defectName }}</span>
+                      <span v-else class="muted small">—</span>
+                    </td>
+                    <td class="small">{{ REPAIR_ACTION_LABELS[r.action] ?? r.action }}</td>
+                    <td>
+                      <span class="badge" :class="{
+                        'badge-warn': r.status === 'InProgress',
+                        'badge-ok': r.status === 'Repaired',
+                        'badge-danger': r.status === 'Scrapped',
+                      }">{{ REPAIR_STATUS_LABELS[r.status] }}</span>
+                    </td>
+                    <td class="small muted">
+                      <div>{{ formatTime(r.startedAtUtc) }}</div>
+                      <div>{{ r.completedAtUtc ? formatTime(r.completedAtUtc) : '未出站' }}</div>
+                    </td>
+                    <td class="small muted">
+                      <div>{{ r.operatorName }}</div>
+                      <div>{{ r.checkoutByName ?? '—' }}</div>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </template>
           </div>
         </section>
       </div>

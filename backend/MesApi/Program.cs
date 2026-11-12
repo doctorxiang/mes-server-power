@@ -111,6 +111,7 @@ try
     builder.Services.AddScoped<ITraceService, TraceService>();
     builder.Services.AddScoped<IMasterDataService, MasterDataService>();
     builder.Services.AddScoped<IExceptionService, ExceptionService>();
+    builder.Services.AddScoped<IQcInspectionService, QcInspectionService>();
     builder.Services.AddSingleton<IBoardNotifier, BoardNotifier>();
 
     // ---------- Quartz 调度：维修超时 / 交期预警 / 夜间报表 / 数据保养 ----------

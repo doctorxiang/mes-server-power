@@ -8,7 +8,9 @@ namespace MesApi.Services;
 
 public interface IWorkOrderService
 {
-    Task<IReadOnlyList<WorkOrderListItem>> ListAsync(string? status, int? lineId, string? keyword, CancellationToken ct);
+    /// <summary>工单列表。status 支持单值，也支持 active（进行中）/ done（已完工+已关单）两个分组。</summary>
+    Task<IReadOnlyList<WorkOrderListItem>> ListAsync(
+        string? status, int? lineId, string? keyword, DateTime? fromUtc, DateTime? toUtc, CancellationToken ct);
     Task<WorkOrderDetail> GetAsync(int id, CancellationToken ct);
     Task<WorkOrderDetail> CreateAsync(CreateWorkOrderRequest request, int userId, CancellationToken ct);
     Task<WorkOrderListItem> ChangeStatusAsync(int id, string action, CancellationToken ct);
@@ -20,17 +22,43 @@ public interface IWorkOrderService
 
 public class WorkOrderService(MesDbContext db) : IWorkOrderService
 {
-    public async Task<IReadOnlyList<WorkOrderListItem>> ListAsync(string? status, int? lineId, string? keyword, CancellationToken ct)
+    public async Task<IReadOnlyList<WorkOrderListItem>> ListAsync(
+        string? status, int? lineId, string? keyword, DateTime? fromUtc, DateTime? toUtc, CancellationToken ct)
     {
         var query = db.WorkOrders.AsNoTracking()
             .Include(w => w.Product).Include(w => w.Line)
             .AsQueryable();
 
         if (!string.IsNullOrWhiteSpace(status))
-            query = query.Where(w => w.Status == status);
+        {
+            var s = status.Trim();
+            query = s switch
+            {
+                // 列表页"进行中"看的是还没完工的单：已下发 + 生产中
+                "active" => query.Where(w => w.Status == nameof(WorkOrderStatus.Released)
+                                          || w.Status == nameof(WorkOrderStatus.InProduction)),
+                "done" => query.Where(w => w.Status == nameof(WorkOrderStatus.Completed)
+                                        || w.Status == nameof(WorkOrderStatus.Closed)),
+                _ => query.Where(w => w.Status == s)
+            };
+        }
 
         if (lineId is not null)
             query = query.Where(w => w.LineId == lineId);
+
+        // 日期按"计划开工"过滤（东八区自然日），计划员排产时最常按这一列找单
+        if (fromUtc.HasValue)
+        {
+            var from = FactoryClock.StartOfLocalDayUtc(FactoryClock.DateOf(fromUtc.Value));
+            query = query.Where(w => w.PlannedStartUtc >= from);
+        }
+        if (toUtc.HasValue)
+        {
+            var day = DateTime.SpecifyKind(DateTime.Parse(FactoryClock.DateOf(toUtc.Value)), DateTimeKind.Unspecified)
+                .AddDays(1);
+            var toExclusive = TimeZoneInfo.ConvertTimeToUtc(day, FactoryClock.TimeZone);
+            query = query.Where(w => w.PlannedStartUtc < toExclusive);
+        }
 
         if (!string.IsNullOrWhiteSpace(keyword))
         {
@@ -68,6 +96,22 @@ public class WorkOrderService(MesDbContext db) : IWorkOrderService
             .Select(g => new { g.Key.WorkOrderId, g.Key.Status, Qty = g.Count() })
             .ToListAsync(ct);
 
+        // 返修口径：次数 = 维修记录条数（同一台修两次算两次）；
+        // 台数 = 进过维修站的不同 SN 数。修两次救回来仍是良品，但 FPY 已经被扣掉了。
+        var repairTimes = await db.RepairRecords.AsNoTracking()
+            .Where(r => ids.Contains(r.WorkOrderId))
+            .GroupBy(r => r.WorkOrderId)
+            .Select(g => new { WorkOrderId = g.Key, Qty = g.Count() })
+            .ToListAsync(ct);
+
+        var repairUnits = await db.RepairRecords.AsNoTracking()
+            .Where(r => ids.Contains(r.WorkOrderId))
+            .Select(r => new { r.WorkOrderId, r.SerialUnitId })
+            .Distinct()
+            .GroupBy(x => x.WorkOrderId)
+            .Select(g => new { WorkOrderId = g.Key, Qty = g.Count() })
+            .ToListAsync(ct);
+
         return orders.Select(o =>
         {
             var scrap = unitStats.Where(s => s.WorkOrderId == o.Id && s.Status == nameof(UnitStatus.Scrapped)).Sum(s => s.Qty);
@@ -80,7 +124,9 @@ public class WorkOrderService(MesDbContext db) : IWorkOrderService
                 unitStats.Where(s => s.WorkOrderId == o.Id && s.Status == nameof(UnitStatus.Completed)).Sum(s => s.Qty),
                 unitStats.Where(s => s.WorkOrderId == o.Id && s.Status == nameof(UnitStatus.Hold)).Sum(s => s.Qty),
                 o.Status, o.Priority, o.PlannedStartUtc, o.DueDateUtc, o.CreatedAtUtc,
-                issued, scrap, MaterialPlanning.ReplenishNeed(o.PlanQty, issued, scrap)
+                issued, scrap, MaterialPlanning.ReplenishNeed(o.PlanQty, issued, scrap),
+                repairUnits.Where(r => r.WorkOrderId == o.Id).Sum(r => r.Qty),
+                repairTimes.Where(r => r.WorkOrderId == o.Id).Sum(r => r.Qty)
             );
         }).ToList();
     }
@@ -262,7 +308,7 @@ public class WorkOrderService(MesDbContext db) : IWorkOrderService
         }
 
         await db.SaveChangesAsync(ct);
-        return (await ListAsync(null, null, order.OrderNo, ct)).First();
+        return (await ListAsync(null, null, order.OrderNo, null, null, ct)).First();
     }
 
     /// <summary>

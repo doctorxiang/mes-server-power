@@ -203,6 +203,10 @@ export interface WorkOrderListItem {
   scrapQty: number
   /** 报废后还没补的缺口，>0 时必须补料才能继续上线 */
   replenishQty: number
+  /** 返修台数：进过维修站的不同 SN 数 */
+  repairUnits: number
+  /** 返修次数：维修记录条数（同一台修两次算两次） */
+  repairTimes: number
 }
 
 export interface StepProgress {
@@ -347,6 +351,81 @@ export const REPAIR_STATUS_LABELS: Record<string, string> = {
   Repaired: '修复出站',
   Scrapped: '报废出站',
 }
+
+/** 维修站筛选条件：日期 + 产线 + 工序 + 不良代码 + 工单号，队列与历史共用 */
+export interface RepairQuery {
+  limit?: number
+  orderNo?: string
+  lineId?: number
+  stepId?: number
+  defectCode?: string
+  status?: string
+  from?: string
+  to?: string
+}
+
+/** 维修历史（维修站「维修记录」Tab）：按日期/产线/工序/不良代码翻历史 */
+export interface RepairHistoryRow {
+  id: number
+  sn: string
+  orderNo: string
+  productName: string
+  lineName: string
+  sourceStepName: string
+  repairNo: number
+  defectCode: string | null
+  defectName: string | null
+  action: string
+  status: 'InProgress' | 'Repaired' | 'Scrapped'
+  operatorName: string
+  checkoutByName: string | null
+  startedAtUtc: string
+  completedAtUtc: string | null
+  remark: string | null
+}
+
+// ---------------- QC 抽检（已包装成品） ----------------
+
+export interface QcInspectionRow {
+  id: number
+  sn: string
+  orderNo: string
+  productName: string
+  lineName: string
+  category: string
+  result: 'Pass' | 'Fail'
+  defectCode: string | null
+  defectName: string | null
+  inspectorName: string
+  inspectedAtUtc: string
+  remark: string | null
+}
+
+export interface QcSummary {
+  inspected: number
+  pass: number
+  fail: number
+  passRate: number
+  orders: number
+  lines: number
+}
+
+export interface QcInspectionResult {
+  summary: QcSummary
+  rows: QcInspectionRow[]
+}
+
+export interface QcCandidateRow {
+  unitId: number
+  sn: string
+  orderNo: string
+  productName: string
+  lineName: string
+  completedAtUtc: string | null
+  inspectedTimes: number
+}
+
+export const QC_CATEGORIES = ['包装', '外观', '功能', '安规'] as const
 
 export interface StepWip {
   stepCode: string

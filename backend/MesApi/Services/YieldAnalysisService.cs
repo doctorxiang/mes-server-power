@@ -29,7 +29,9 @@ public record YieldResult(
 
 public interface IYieldAnalysisService
 {
-    Task<YieldResult> QueryAsync(string by, DateTime? fromUtc, DateTime? toUtc, CancellationToken ct);
+    /// <summary>by=order 按工单 / by=product 按机种；可按机种编码、工单号进一步收窄。</summary>
+    Task<YieldResult> QueryAsync(
+        string by, DateTime? fromUtc, DateTime? toUtc, string? productCode, string? orderNo, CancellationToken ct);
 }
 
 /// <summary>
@@ -41,12 +43,27 @@ public interface IYieldAnalysisService
 /// </summary>
 public class YieldAnalysisService(MesDbContext db) : IYieldAnalysisService
 {
-    public async Task<YieldResult> QueryAsync(string by, DateTime? fromUtc, DateTime? toUtc, CancellationToken ct)
+    public async Task<YieldResult> QueryAsync(
+        string by, DateTime? fromUtc, DateTime? toUtc, string? productCode, string? orderNo, CancellationToken ct)
     {
         by = by == "product" ? "product" : "order";
 
         var unitsQuery = db.Units.AsNoTracking().AsQueryable();
         var logsQuery = db.MoveLogs.AsNoTracking().AsQueryable();
+
+        // 机种 / 工单收窄：工单报告页要先选机种再看该机种下每一单的表现
+        if (!string.IsNullOrWhiteSpace(productCode))
+        {
+            var pc = productCode.Trim();
+            unitsQuery = unitsQuery.Where(u => u.WorkOrder!.Product!.Code == pc);
+            logsQuery = logsQuery.Where(l => l.SerialUnit!.WorkOrder!.Product!.Code == pc);
+        }
+        if (!string.IsNullOrWhiteSpace(orderNo))
+        {
+            var no = orderNo.Trim();
+            unitsQuery = unitsQuery.Where(u => u.WorkOrder!.OrderNo.Contains(no));
+            logsQuery = logsQuery.Where(l => l.SerialUnit!.WorkOrder!.OrderNo.Contains(no));
+        }
 
         if (fromUtc.HasValue)
         {

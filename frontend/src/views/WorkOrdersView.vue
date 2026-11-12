@@ -13,11 +13,16 @@ const router = useRouter()
 const auth = useAuthStore()
 
 const orders = ref<WorkOrderListItem[]>([])
+// 全厂口径的 KPI：不随查询条件变化，避免"筛了一条产线，KPI 变成一条线的数"
+const kpiOrders = ref<WorkOrderListItem[]>([])
 const boot = ref<MasterBootstrap | null>(null)
 const loading = ref(true)
 const error = ref('')
-const filter = ref<'all' | 'active' | 'done'>('active')
+const filter = ref<'active' | 'all' | 'done'>('active')
 const keyword = ref('')
+const lineId = ref(0)
+const from = ref('')
+const to = ref('')
 
 const showCreate = ref(false)
 const saving = ref(false)
@@ -37,27 +42,23 @@ function toLocalInput(d: Date): string {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
 }
 
-const filtered = computed(() => {
-  let list = orders.value
-  if (filter.value === 'active') list = list.filter((o) => o.status === 'Released' || o.status === 'InProduction')
-  if (filter.value === 'done') list = list.filter((o) => o.status === 'Completed' || o.status === 'Closed')
-  const kw = keyword.value.trim().toLowerCase()
-  if (kw) list = list.filter((o) => `${o.orderNo} ${o.productCode} ${o.productName}`.toLowerCase().includes(kw))
-  return list
-})
+const hasFilter = computed(() => Boolean(keyword.value || lineId.value || from.value || to.value || filter.value !== 'active'))
 
 const totals = computed(() => {
-  const active = orders.value.filter((o) => o.status === 'Released' || o.status === 'InProduction')
+  const list = kpiOrders.value
+  const active = list.filter((o) => o.status === 'Released' || o.status === 'InProduction')
   return {
     active: active.length,
     plan: active.reduce((s, o) => s + o.planQty, 0),
-    completed: orders.value.reduce((s, o) => s + o.completedQty, 0),
+    completed: list.reduce((s, o) => s + o.completedQty, 0),
     // 在制单还差多少台才到计划（计划是良品数，等于需求量）
     remaining: Math.max(0, active.reduce((s, o) => s + o.planQty, 0) - active.reduce((s, o) => s + o.completedQty, 0)),
-    hold: orders.value.reduce((s, o) => s + o.holdQty, 0),
+    hold: list.reduce((s, o) => s + o.holdQty, 0),
     // 报废后还没补料、卡着上不了线的单子
-    shortage: orders.value.filter((o) => o.replenishQty > 0).length,
-    shortageQty: orders.value.reduce((s, o) => s + o.replenishQty, 0),
+    shortage: list.filter((o) => o.replenishQty > 0).length,
+    shortageQty: list.reduce((s, o) => s + o.replenishQty, 0),
+    repairUnits: list.reduce((s, o) => s + o.repairUnits, 0),
+    repairTimes: list.reduce((s, o) => s + o.repairTimes, 0),
   }
 })
 
@@ -66,12 +67,47 @@ function progressOf(o: WorkOrderListItem): number {
   return Math.min(100, percent(o.completedQty, o.planQty))
 }
 
+function queryParams() {
+  return {
+    status: filter.value === 'all' ? undefined : filter.value,
+    lineId: lineId.value || undefined,
+    keyword: keyword.value.trim() || undefined,
+    from: from.value || undefined,
+    to: to.value || undefined,
+  }
+}
+
+// 连点筛选/切 Tab 时只认最后一次请求，避免慢响应把新结果盖掉
+let loadSeq = 0
+
 async function load() {
+  const seq = ++loadSeq
   loading.value = true
   error.value = ''
   try {
-    const [{ data: list }, { data: master }] = await Promise.all([mesApi.workOrders(), mesApi.bootstrap()])
+    const { data: list } = await mesApi.workOrders(queryParams())
+    if (seq !== loadSeq) return
     orders.value = list
+  } catch (e) {
+    if (seq !== loadSeq) return
+    error.value = parseApiError(e)
+  } finally {
+    if (seq === loadSeq) loading.value = false
+  }
+}
+
+async function loadKpi() {
+  try {
+    const { data } = await mesApi.workOrders()
+    kpiOrders.value = data
+  } catch {
+    // KPI 失败不挡住列表
+  }
+}
+
+async function loadMaster() {
+  try {
+    const { data: master } = await mesApi.bootstrap()
     boot.value = master
     if (master.products.length && !form.value.productId) {
       form.value.productId = master.products[0].id
@@ -79,9 +115,21 @@ async function load() {
     }
   } catch (e) {
     error.value = parseApiError(e)
-  } finally {
-    loading.value = false
   }
+}
+
+function selectFilter(v: 'active' | 'all' | 'done') {
+  filter.value = v
+  load()
+}
+
+function resetFilters() {
+  filter.value = 'active'
+  keyword.value = ''
+  lineId.value = 0
+  from.value = ''
+  to.value = ''
+  load()
 }
 
 async function createOrder() {
@@ -102,7 +150,7 @@ async function createOrder() {
       remark: form.value.remark || undefined,
     })
     showCreate.value = false
-    await load()
+    await Promise.all([load(), loadKpi()])
     router.push(`/work-orders/${data.summary.id}`)
   } catch (e) {
     formError.value = parseApiError(e)
@@ -115,12 +163,17 @@ function openDetail(id: number) {
   router.push(`/work-orders/${id}`)
 }
 
-onMounted(load)
+onMounted(() => {
+  loadMaster()
+  load()
+  loadKpi()
+})
 </script>
 
 <template>
   <AppShell title="工单管理" subtitle="计划下达、进度跟踪与完工判定">
     <template #actions>
+      <button class="btn" @click="router.push('/work-orders/report')">工单报告</button>
       <button v-if="auth.canPlan" class="btn btn-primary" @click="showCreate = true">＋ 新建工单</button>
     </template>
 
@@ -147,20 +200,45 @@ onMounted(load)
         <div class="label">待补料</div>
         <div class="value">{{ totals.shortage }}<small>张 / {{ totals.shortageQty }} 套</small></div>
       </div>
+      <div class="stat">
+        <div class="label">累计返修</div>
+        <div class="value">{{ totals.repairUnits }}<small>台 / {{ totals.repairTimes }} 次</small></div>
+      </div>
     </div>
 
     <div class="card">
       <div class="toolbar">
         <div class="tabs" style="margin: 0; border: none; flex: 1">
-          <button class="tab" :class="{ active: filter === 'active' }" @click="filter = 'active'">进行中</button>
-          <button class="tab" :class="{ active: filter === 'all' }" @click="filter = 'all'">全部</button>
-          <button class="tab" :class="{ active: filter === 'done' }" @click="filter = 'done'">已完工</button>
+          <button class="tab" :class="{ active: filter === 'active' }" @click="selectFilter('active')">进行中</button>
+          <button class="tab" :class="{ active: filter === 'all' }" @click="selectFilter('all')">全部</button>
+          <button class="tab" :class="{ active: filter === 'done' }" @click="selectFilter('done')">已完工</button>
         </div>
-        <input v-model="keyword" class="input" style="max-width: 240px" placeholder="搜索工单号 / 机型" />
+        <input v-model="keyword" class="input" style="max-width: 220px" placeholder="工单号 / 机型" @keyup.enter="load" />
+      </div>
+
+      <div class="filter-row">
+        <label>
+          <span class="small muted">产线</span>
+          <select v-model.number="lineId" class="select" style="width: 170px" @change="load">
+            <option :value="0">全部产线</option>
+            <option v-for="l in boot?.lines ?? []" :key="l.id" :value="l.id">{{ l.name }}</option>
+          </select>
+        </label>
+        <label>
+          <span class="small muted">计划开工 从</span>
+          <input v-model="from" type="date" class="input" style="width: 150px" @change="load" />
+        </label>
+        <label>
+          <span class="small muted">到</span>
+          <input v-model="to" type="date" class="input" style="width: 150px" @change="load" />
+        </label>
+        <button class="btn" @click="load">查询</button>
+        <button class="btn btn-ghost" :disabled="!hasFilter" @click="resetFilters">重置</button>
+        <span class="small muted">{{ loading ? '查询中…' : `共 ${orders.length} 张工单` }}</span>
       </div>
 
       <div v-if="loading" class="empty">加载中…</div>
-      <div v-else-if="!filtered.length" class="empty">没有符合条件的工单</div>
+      <div v-else-if="!orders.length" class="empty">没有符合条件的工单，换个日期或产线试试</div>
       <div v-else class="table-wrap">
         <table class="table">
           <thead>
@@ -170,13 +248,14 @@ onMounted(load)
               <th>产线</th>
               <th style="width: 190px">进度（完工 ÷ 计划）</th>
               <th>计划 / 发料 / 投入 / 完工 <span class="muted" style="font-weight: 400">（报废看详情）</span></th>
+              <th>返修（台 / 次）</th>
               <th>状态</th>
-              <th>交期</th>
+              <th>开工 / 交期</th>
               <th></th>
             </tr>
           </thead>
           <tbody>
-            <tr v-for="o in filtered" :key="o.id" class="clickable" @click="openDetail(o.id)">
+            <tr v-for="o in orders" :key="o.id" class="clickable" @click="openDetail(o.id)">
               <td>
                 <div class="mono" style="font-weight: 600">{{ o.orderNo }}</div>
                 <div class="small" v-if="o.priority === 1" style="color: var(--danger)">急件</div>
@@ -197,6 +276,9 @@ onMounted(load)
               <td class="small mono">
                 {{ o.planQty }} / {{ o.issuedQty }} / {{ o.inputQty }} / {{ o.completedQty }}
               </td>
+              <td class="small mono" :class="{ 'rep-warn': o.repairTimes > 0 }">
+                {{ o.repairUnits }} / {{ o.repairTimes }}
+              </td>
               <td>
                 <span class="badge" :class="{
                   'badge-blue': o.status === 'InProduction' || o.status === 'Released',
@@ -204,7 +286,10 @@ onMounted(load)
                   'badge-warn': o.status === 'Draft',
                 }">{{ STATUS_LABELS[o.status] ?? o.status }}</span>
               </td>
-              <td class="small">{{ formatDate(o.dueDateUtc) }}</td>
+              <td class="small">
+                <div>{{ formatDate(o.plannedStartUtc) }}</div>
+                <div class="muted">交期 {{ formatDate(o.dueDateUtc) }}</div>
+              </td>
               <td><span class="small muted">详情 →</span></td>
             </tr>
           </tbody>
@@ -286,6 +371,28 @@ onMounted(load)
   padding: 6px 14px 0;
   border-bottom: 1px solid var(--border);
   flex-wrap: wrap;
+}
+
+/* 查询条件行：日期 / 产线都在这里，和状态 Tab 分开，避免挤成一条看不懂的横条 */
+.filter-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 12px 14px;
+  background: var(--surface-2);
+  border-bottom: 1px solid var(--border);
+}
+
+.filter-row label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.rep-warn {
+  color: #d97706;
+  font-weight: 700;
 }
 
 .table-wrap {

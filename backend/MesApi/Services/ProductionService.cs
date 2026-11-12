@@ -14,7 +14,8 @@ public interface IProductionService
     Task<ScanResponse> ScanAsync(ScanRequest request, int operatorId, string operatorName, CancellationToken ct);
     Task<IReadOnlyList<RecentLogRow>> RecentAsync(string? stepCode, int limit, CancellationToken ct);
     Task<UnitActionResponse> HandleHoldAsync(string sn, HandleHoldRequest request, int operatorId, string operatorName, CancellationToken ct);
-    Task<IReadOnlyList<RepairPendingRow>> RepairPendingAsync(int limit, string? orderNo, string? product, CancellationToken ct);
+    Task<IReadOnlyList<RepairPendingRow>> RepairPendingAsync(RepairFilter filter, CancellationToken ct);
+    Task<IReadOnlyList<RepairHistoryRow>> RepairHistoryAsync(RepairFilter filter, CancellationToken ct);
     Task<RepairRecordRow> RepairCheckinAsync(RepairCheckinRequest request, int operatorId, string operatorName, CancellationToken ct);
     Task<UnitActionResponse> RepairCheckoutAsync(RepairCheckoutRequest request, int operatorId, string operatorName, CancellationToken ct);
 }
@@ -383,19 +384,43 @@ public class ProductionService(
     // ---------------- 维修站 ----------------
 
     /// <summary>待维修队列：隔离中的 SN + 最后不良信息 + 历史维修次数/是否维修中。支持按工单号、机种筛选。</summary>
-    public async Task<IReadOnlyList<RepairPendingRow>> RepairPendingAsync(int limit, string? orderNo, string? product, CancellationToken ct)
+    public async Task<IReadOnlyList<RepairPendingRow>> RepairPendingAsync(RepairFilter filter, CancellationToken ct)
     {
-        limit = Math.Clamp(limit, 1, 100);
+        var limit = Math.Clamp(filter.Limit, 1, 100);
 
         var units = db.Units.AsNoTracking()
             .Where(u => u.Status == nameof(UnitStatus.Hold));
 
-        // 筛选条件下推到 SQL；机种按名称或编码模糊匹配（维修员不一定记得编码）
-        if (!string.IsNullOrWhiteSpace(orderNo))
-            units = units.Where(u => u.WorkOrder!.OrderNo.Contains(orderNo));
-        if (!string.IsNullOrWhiteSpace(product))
-            units = units.Where(u => u.WorkOrder!.Product!.Name.Contains(product)
-                                  || u.WorkOrder!.Product!.Code.Contains(product));
+        // 筛选条件下推到 SQL；工单号/不良代码/工序都是维修员现场的检索习惯
+        if (!string.IsNullOrWhiteSpace(filter.OrderNo))
+        {
+            var no = filter.OrderNo.Trim();
+            units = units.Where(u => u.WorkOrder!.OrderNo.Contains(no));
+        }
+        if (filter.LineId is int lineId)
+            units = units.Where(u => u.LineId == lineId);
+        if (filter.StepId is int stepId)
+            units = units.Where(u => u.CurrentStepId == stepId);
+        if (!string.IsNullOrWhiteSpace(filter.DefectCode))
+        {
+            // 不良代码看"最后一次判不良"的那条流水：一台机可能先虚焊加工，最后卡在无输出
+            var code = filter.DefectCode.Trim();
+            units = units.Where(u => db.MoveLogs
+                .Where(l => l.SerialUnitId == u.Id && l.Result == "Fail" && l.DefectCode != null)
+                .OrderByDescending(l => l.Id)
+                .Select(l => l.DefectCode!.Code)
+                .FirstOrDefault() == code);
+        }
+        if (filter.FromUtc.HasValue)
+        {
+            var from = FactoryClock.StartOfLocalDayUtc(FactoryClock.DateOf(filter.FromUtc.Value));
+            units = units.Where(u => u.LastScanAtUtc >= from);
+        }
+        if (filter.ToUtc.HasValue)
+        {
+            var toExclusive = FactoryClock.StartOfLocalDayUtc(FactoryClock.DateOf(filter.ToUtc.Value)).AddDays(1);
+            units = units.Where(u => u.LastScanAtUtc < toExclusive);
+        }
 
         var list = await units
             .OrderBy(u => u.LastScanAtUtc)
@@ -450,6 +475,78 @@ public class ProductionService(
                 fail?.Code, fail?.Name,
                 stat?.Count ?? 0, stat?.Repairing ?? false, u.LastScanAtUtc);
         }).ToList();
+    }
+
+    /// <summary>
+    /// 维修历史：待修队列只有"当下还卡着的"，复盘要的是"这段时间这道工序这个不良折腾了多少台"。
+    /// 条件与队列一致（日期 = 进站时间），外加状态筛（维修中 / 修复 / 报废）。
+    /// </summary>
+    public async Task<IReadOnlyList<RepairHistoryRow>> RepairHistoryAsync(RepairFilter filter, CancellationToken ct)
+    {
+        var limit = Math.Clamp(filter.Limit, 1, 200);
+
+        var query = db.RepairRecords.AsNoTracking()
+            .Include(r => r.SerialUnit)
+            .Where(r => r.SerialUnit != null);
+
+        if (!string.IsNullOrWhiteSpace(filter.OrderNo))
+        {
+            var no = filter.OrderNo.Trim();
+            query = query.Where(r => r.SerialUnit!.WorkOrder!.OrderNo.Contains(no));
+        }
+        if (filter.LineId is int lineId)
+            query = query.Where(r => r.SerialUnit!.LineId == lineId);
+        if (filter.StepId is int stepId)
+            query = query.Where(r => r.SourceStepId == stepId);
+        if (!string.IsNullOrWhiteSpace(filter.DefectCode))
+        {
+            var code = filter.DefectCode.Trim();
+            query = query.Where(r => r.DefectCode != null && r.DefectCode.Code == code);
+        }
+        if (!string.IsNullOrWhiteSpace(filter.Status))
+        {
+            var st = filter.Status.Trim();
+            query = query.Where(r => r.Status == st);
+        }
+        if (filter.FromUtc.HasValue)
+        {
+            var from = FactoryClock.StartOfLocalDayUtc(FactoryClock.DateOf(filter.FromUtc.Value));
+            query = query.Where(r => r.StartedAtUtc >= from);
+        }
+        if (filter.ToUtc.HasValue)
+        {
+            var toExclusive = FactoryClock.StartOfLocalDayUtc(FactoryClock.DateOf(filter.ToUtc.Value)).AddDays(1);
+            query = query.Where(r => r.StartedAtUtc < toExclusive);
+        }
+
+        var records = await query
+            .OrderByDescending(r => r.Id)
+            .Take(limit)
+            .Select(r => new
+            {
+                r.Id,
+                r.RepairNo,
+                r.Action,
+                r.Status,
+                r.StartedAtUtc,
+                r.CompletedAtUtc,
+                r.OperatorName,
+                r.CheckoutByName,
+                r.Remark,
+                Sn = r.SerialUnit!.Sn,
+                OrderNo = r.SerialUnit.WorkOrder!.OrderNo,
+                ProductName = r.SerialUnit.WorkOrder.Product!.Name,
+                LineName = r.SerialUnit.WorkOrder.Line!.Name,
+                StepName = r.SourceStep!.Name,
+                DefectCode = r.DefectCode != null ? r.DefectCode.Code : null,
+                DefectName = r.DefectCode != null ? r.DefectCode.Name : null
+            })
+            .ToListAsync(ct);
+
+        return records.Select(r => new RepairHistoryRow(
+            r.Id, r.Sn, r.OrderNo, r.ProductName, r.LineName, r.StepName, r.RepairNo,
+            r.DefectCode, r.DefectName, r.Action, r.Status, r.OperatorName, r.CheckoutByName,
+            r.StartedAtUtc, r.CompletedAtUtc, r.Remark)).ToList();
     }
 
     /// <summary>进站：确认维修，开 InProgress 记录。重复维修受 MaxRepairs 限制，管理员可 force。</summary>

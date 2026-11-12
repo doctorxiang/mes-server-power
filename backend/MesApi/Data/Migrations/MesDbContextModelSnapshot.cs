@@ -518,6 +518,72 @@ namespace MesApi.Data.Migrations
                     b.ToTable("line", (string)null);
                 });
 
+            modelBuilder.Entity("MesApi.Domain.QcInspection", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    MySqlPropertyBuilderExtensions.UseMySqlIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("Category")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("varchar(16)");
+
+                    b.Property<int?>("DefectCodeId")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime>("InspectedAtUtc")
+                        .HasColumnType("datetime(6)");
+
+                    b.Property<int>("InspectorId")
+                        .HasColumnType("int");
+
+                    b.Property<string>("InspectorName")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("varchar(32)");
+
+                    b.Property<int>("LineId")
+                        .HasColumnType("int");
+
+                    b.Property<int>("ProductId")
+                        .HasColumnType("int");
+
+                    b.Property<string>("ProductionDate")
+                        .IsRequired()
+                        .HasMaxLength(10)
+                        .HasColumnType("varchar(10)");
+
+                    b.Property<string>("Remark")
+                        .HasMaxLength(256)
+                        .HasColumnType("varchar(256)");
+
+                    b.Property<string>("Result")
+                        .IsRequired()
+                        .HasMaxLength(8)
+                        .HasColumnType("varchar(8)");
+
+                    b.Property<long>("SerialUnitId")
+                        .HasColumnType("bigint");
+
+                    b.Property<int>("WorkOrderId")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("DefectCodeId");
+
+                    b.HasIndex("SerialUnitId");
+
+                    b.HasIndex("ProductionDate", "Result");
+
+                    b.HasIndex("WorkOrderId", "InspectedAtUtc");
+
+                    b.ToTable("qc_inspection", (string)null);
+                });
+
             modelBuilder.Entity("MesApi.Domain.RefreshToken", b =>
                 {
                     b.Property<long>("Id")
@@ -949,6 +1015,24 @@ namespace MesApi.Data.Migrations
                     b.Navigation("Product");
 
                     b.Navigation("Step");
+                });
+
+            modelBuilder.Entity("MesApi.Domain.QcInspection", b =>
+                {
+                    b.HasOne("MesApi.Domain.DefectCode", "DefectCode")
+                        .WithMany()
+                        .HasForeignKey("DefectCodeId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.HasOne("MesApi.Domain.SerialUnit", "SerialUnit")
+                        .WithMany()
+                        .HasForeignKey("SerialUnitId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("DefectCode");
+
+                    b.Navigation("SerialUnit");
                 });
 
             modelBuilder.Entity("MesApi.Domain.RefreshToken", b =>

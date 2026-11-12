@@ -9,8 +9,13 @@ import type {
   FileDocRow,
   MasterBootstrap,
   PagedResult,
+  QcCandidateRow,
+  QcInspectionResult,
+  QcInspectionRow,
   RecentLog,
+  RepairHistoryRow,
   RepairPendingRow,
+  RepairQuery,
   RepairRecordRow,
   ScanResponse,
   TraceResponse,
@@ -41,8 +46,14 @@ export const authApi = {
 
 export const mesApi = {  bootstrap: () => api.get<MasterBootstrap>('/master/bootstrap'),
 
-  workOrders: (params?: { status?: string; lineId?: number; keyword?: string }) =>
-    api.get<WorkOrderListItem[]>('/work-orders', { params }),
+  workOrders: (params?: {
+    status?: string
+    lineId?: number
+    keyword?: string
+    /** 按计划开工日期过滤（yyyy-MM-dd） */
+    from?: string
+    to?: string
+  }) => api.get<WorkOrderListItem[]>('/work-orders', { params }),
   workOrder: (id: number) => api.get<WorkOrderDetail>(`/work-orders/${id}`),
   workOrderByNo: (orderNo: string) => api.get<WorkOrderListItem>(`/work-orders/by-no/${encodeURIComponent(orderNo)}`),
   /** 补料：报废一台补一台，补完才能继续上线 */
@@ -75,8 +86,12 @@ export const mesApi = {  bootstrap: () => api.get<MasterBootstrap>('/master/boot
   handleHold: (sn: string, action: 'rework' | 'scrap', remark?: string) =>
     api.post('/production/hold-handle', { action, remark }, { params: { sn } }),
 
-  repairPending: (limit = 50, orderNo?: string, product?: string) =>
-    api.get<RepairPendingRow[]>('/production/repair/pending', { params: { limit, orderNo, product } }),
+  /** 待维修队列：日期 = 隔离时间；可按产线 / 工序 / 不良代码 / 工单号筛 */
+  repairPending: (params?: RepairQuery) =>
+    api.get<RepairPendingRow[]>('/production/repair/pending', { params }),
+  /** 维修历史：复盘用，条件与队列一致 + 状态（InProgress / Repaired / Scrapped） */
+  repairHistory: (params?: RepairQuery) =>
+    api.get<RepairHistoryRow[]>('/production/repair/history', { params }),
   repairCheckin: (payload: {
     sn: string
     action: string
@@ -118,10 +133,27 @@ export const apsApi = {
   run: (includeDraft = false) => api.post<ApsResult>('/aps/run', null, { params: { includeDraft } }),
 }
 
-/** 良率 / 不良率分析 */
+/** 工单报告（原良率分析）：按工单 / 机种看良品率与直通率，可按机种、工单下钻 */
 export const analysisApi = {
-  yield: (by: 'order' | 'product', from?: string, to?: string) =>
-    api.get<YieldResult>('/analysis/yield', { params: { by, from, to } }),
+  yield: (params: { by: 'order' | 'product'; from?: string; to?: string; product?: string; order?: string }) =>
+    api.get<YieldResult>('/analysis/yield', { params }),
+}
+
+/** QC 抽检：已包装成品的出货前抽检 */
+export const qcApi = {
+  inspections: (params: {
+    from?: string
+    to?: string
+    lineId?: number
+    product?: string
+    order?: string
+    result?: string
+    limit?: number
+  }) => api.get<QcInspectionResult>('/qc/inspections', { params }),
+  candidates: (params?: { order?: string; lineId?: number; product?: string; limit?: number }) =>
+    api.get<QcCandidateRow[]>('/qc/candidates', { params }),
+  create: (payload: { sn: string; category: string; result: 'Pass' | 'Fail'; defectCode?: string; remark?: string }) =>
+    api.post<QcInspectionRow>('/qc/inspections', payload),
 }
 
 /** 图纸 / SOP / 检验报告等非结构化文件 */

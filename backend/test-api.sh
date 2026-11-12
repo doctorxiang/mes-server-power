@@ -140,6 +140,41 @@ check "操作工访问账号管理 403" "403" "$(code $BASE/api/auth/users)"
 check "操作工建单 403" "403" "$(code -X POST $BASE/api/work-orders -d '{"productId":1,"lineId":1,"planQty":5,"priority":2,"plannedStartUtc":"2026-11-10T08:00:00Z","dueDateUtc":"2026-11-11T08:00:00Z"}')"
 check "操作工可以扫码" "200" "$(code -X POST $BASE/api/production/scan -d "{\"sn\":\"$SN\",\"orderNo\":\"$ORDER\",\"stationCode\":\"A-05\",\"stepCode\":\"ICT\",\"result\":\"Pass\",\"clientKey\":\"k-op-$SN\"}")"
 
+echo "=== 11. 查询条件（工单日期/产线、维修站工序/不良）==="
+TOKEN=$(echo "$LOGIN" | jget "d['accessToken']")
+W1=$(api "$BASE/api/work-orders?lineId=2&from=2026-11-01&to=2026-12-31")
+check "工单按产线+计划开工日期有结果" "True" "$([ "$(echo "$W1" | jget "len(d)")" -gt 0 ] && echo True || echo False)"
+check "筛选结果只含二线" "True" "$(echo "$W1" | jget "all(w['lineId']==2 for w in d)")"
+check "日期落在未来 -> 0 张" "0" "$(api "$BASE/api/work-orders?from=2027-01-01" | jget "len(d)")"
+check "工单行含返修台数/次数" "True" "$(api "$BASE/api/work-orders" | jget "all('repairUnits' in w and 'repairTimes' in w for w in d)")"
+
+LEADER=$(echo "$LOGIN" | jget "d['accessToken']")
+RH=$(TOKEN=$LEADER api "$BASE/api/production/repair/history?limit=100&defectCode=WELD-01")
+check "维修历史按不良代码筛选" "True" "$([ "$(echo "$RH" | jget "len(d)")" -gt 0 ] && echo True || echo False)"
+check "历史记录不良代码都是虚焊" "True" "$(echo "$RH" | jget "all(r['defectCode']=='WELD-01' for r in d)")"
+PS=$(TOKEN=$LEADER api "$BASE/api/production/repair/pending?limit=50&stepId=6")
+check "待维修队列按工序筛选（老化测试）" "True" "$(echo "$PS" | jget "all(r['currentStepName']=='老化测试' for r in d)")"
+check "待维修队列按产线筛选" "True" "$(TOKEN=$LEADER api "$BASE/api/production/repair/pending?limit=50&lineId=2" | jget "all(r['lineName'].startswith('电源二线') for r in d)")"
+
+echo "=== 12. 工单报告（机种 / 工单下钻）==="
+BY_P=$(api "$BASE/api/analysis/yield?by=order&product=SPS-800W")
+check "按机种筛报告有数据" "True" "$([ "$(echo "$BY_P" | jget "len(d['rows'])")" -gt 0 ] && echo True || echo False)"
+check "报告行都是 800W 机种" "True" "$(echo "$BY_P" | jget "all(r['displayName'].startswith('800W') for r in d['rows'])")"
+check "按工单号收窄到一行" "1" "$(api "$BASE/api/analysis/yield?by=order&order=$ORDER" | jget "len(d['rows'])")"
+
+echo "=== 13. QC 抽检（已包装成品）==="
+QCQ=$(api "$BASE/api/qc/inspections?limit=5")
+check "抽检台账有历史样本" "True" "$([ "$(echo "$QCQ" | jget "d['summary']['inspected']")" -gt 0 ] && echo True || echo False)"
+CAND=$(api "$BASE/api/qc/candidates?limit=1")
+QSN=$(echo "$CAND" | jget "d[0]['sn']")
+check "候选为已包装成品" "True" "$([ -n "$QSN" ] && echo True || echo False)"
+QC1=$(api -X POST $BASE/api/qc/inspections -d "{\"sn\":\"$QSN\",\"category\":\"包装\",\"result\":\"Pass\",\"remark\":\"冒烟测试抽检\"}")
+check "录入抽检记录成功" "Pass" "$(echo "$QC1" | jget "d['result']")"
+check "不合格必须带不良代码 400" "400" "$(code -X POST $BASE/api/qc/inspections -d "{\"sn\":\"$QSN\",\"category\":\"外观\",\"result\":\"Fail\"}")"
+check "未完工 SN 不能抽检 409" "409" "$(code -X POST $BASE/api/qc/inspections -d "{\"sn\":\"$SN\",\"category\":\"包装\",\"result\":\"Pass\"}")"
+check "操作工录入抽检 403" "403" "$(TOKEN=$OPT code -X POST $BASE/api/qc/inspections -d "{\"sn\":\"$QSN\",\"category\":\"包装\",\"result\":\"Pass\"}")"
+check "抽检后候选里能查到已抽次数" "True" "$(api "$BASE/api/qc/candidates?order=$(api "$BASE/api/qc/inspections?limit=1" | jget "d['rows'][0]['orderNo']")&limit=200" | jget "any(r['inspectedTimes']>0 for r in d)")"
+
 echo
 echo "结果：通过 $pass / 失败 $fail"
 [ "$fail" -eq 0 ]

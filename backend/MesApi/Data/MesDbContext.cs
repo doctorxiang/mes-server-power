@@ -20,6 +20,7 @@ public class MesDbContext(DbContextOptions<MesDbContext> options) : DbContext(op
     public DbSet<SerialUnit> Units => Set<SerialUnit>();
     public DbSet<SnMoveLog> MoveLogs => Set<SnMoveLog>();
     public DbSet<RepairRecord> RepairRecords => Set<RepairRecord>();
+    public DbSet<QcInspection> QcInspections => Set<QcInspection>();
     public DbSet<ExceptionEvent> Exceptions => Set<ExceptionEvent>();
     public DbSet<AuditLog> AuditLogs => Set<AuditLog>();
     public DbSet<FileDocument> FileDocuments => Set<FileDocument>();
@@ -133,6 +134,17 @@ public class MesDbContext(DbContextOptions<MesDbContext> options) : DbContext(op
             e.HasIndex(x => new { x.Status, x.StartedAtUtc });
             e.HasOne(x => x.SerialUnit).WithMany().HasForeignKey(x => x.SerialUnitId).OnDelete(DeleteBehavior.Cascade);
             e.HasOne(x => x.SourceStep).WithMany().HasForeignKey(x => x.SourceStepId).OnDelete(DeleteBehavior.Restrict);
+            e.HasOne(x => x.DefectCode).WithMany().HasForeignKey(x => x.DefectCodeId).OnDelete(DeleteBehavior.SetNull);
+        });
+
+        modelBuilder.Entity<QcInspection>(e =>
+        {
+            e.ToTable("qc_inspection");
+            // 抽检报表的两个主入口：按天看出货质量、按工单/机种复核
+            e.HasIndex(x => new { x.ProductionDate, x.Result });
+            e.HasIndex(x => new { x.WorkOrderId, x.InspectedAtUtc });
+            e.HasIndex(x => x.SerialUnitId);
+            e.HasOne(x => x.SerialUnit).WithMany().HasForeignKey(x => x.SerialUnitId).OnDelete(DeleteBehavior.Cascade);
             e.HasOne(x => x.DefectCode).WithMany().HasForeignKey(x => x.DefectCodeId).OnDelete(DeleteBehavior.SetNull);
         });
 

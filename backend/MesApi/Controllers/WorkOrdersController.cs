@@ -12,10 +12,15 @@ namespace MesApi.Controllers;
 [Authorize]
 public class WorkOrdersController(IWorkOrderService orders) : ControllerBase
 {
+    /// <summary>
+    /// 工单列表。status 支持单值，或 active（在制）/ done（已完工+关单）；
+    /// from / to 按"计划开工"日期（东八区自然日）过滤。
+    /// </summary>
     [HttpGet]
     public async Task<ActionResult<IReadOnlyList<WorkOrderListItem>>> List(
-        [FromQuery] string? status, [FromQuery] int? lineId, [FromQuery] string? keyword, CancellationToken ct)
-        => Ok(await orders.ListAsync(status, lineId, keyword, ct));
+        [FromQuery] string? status, [FromQuery] int? lineId, [FromQuery] string? keyword,
+        [FromQuery] DateTime? from, [FromQuery] DateTime? to, CancellationToken ct)
+        => Ok(await orders.ListAsync(status, lineId, keyword, from, to, ct));
 
     [HttpGet("{id:int}")]
     public async Task<ActionResult<WorkOrderDetail>> Get(int id, CancellationToken ct)
