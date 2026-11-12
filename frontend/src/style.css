@@ -601,9 +601,8 @@ button {
 
 .page {
   padding: 22px 24px 40px;
-  max-width: 1480px;
+  /* 不限宽：大屏铺满内容区，窄屏靠各卡片/表格的滚动容器自适应 */
   width: 100%;
-  margin: 0 auto;
 }
 
 .page-header {

@@ -124,7 +124,7 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <AppShell :title="summary ? `工单 ${summary.orderNo}` : '工单详情'" subtitle="工序进度、在制分布与 SN 记录" wide>
+  <AppShell :title="summary ? `工单 ${summary.orderNo}` : '工单详情'" subtitle="工序进度、在制分布与 SN 记录">
     <template #actions>
       <div class="row">
         <button class="btn" @click="router.push('/work-orders')">返回列表</button>

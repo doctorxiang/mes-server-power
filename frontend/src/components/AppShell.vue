@@ -7,7 +7,7 @@ import { useTabsStore, type PageTab } from '@/stores/tabs'
 import { ROLE_LABELS } from '@/types'
 import { formatClock, formatClockDate } from '@/utils/format'
 
-defineProps<{ title?: string; subtitle?: string; wide?: boolean }>()
+defineProps<{ title?: string; subtitle?: string }>()
 
 const auth = useAuthStore()
 const tabs = useTabsStore()
@@ -421,7 +421,7 @@ async function logout() {
         </div>
       </div>
 
-      <main class="page" :style="wide ? 'max-width:none' : ''">
+      <main class="page">
         <div v-if="title" class="page-header">
           <div>
             <h1>{{ title }}</h1>
