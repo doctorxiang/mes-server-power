@@ -127,7 +127,7 @@ public static class SeedData
             new WorkOrder
             {
                 OrderNo = $"WO{today}001", ProductId = p1200.Id, LineId = lineA.Id, PlanQty = 300,
-                IssuedQty = MaterialPlanning.IssuedFor(300),   // 计划 300 → 发料 353（多备 53 套冗余）
+                IssuedQty = MaterialPlanning.IssuedFor(300),   // 发料 = 计划（不预置冗余，报废后补料）
                 Status = nameof(WorkOrderStatus.InProduction), Priority = 1,
                 PlannedStartUtc = now.AddHours(-6), DueDateUtc = now.AddDays(2),
                 CreatedByUserId = 2, ReleasedAtUtc = now.AddHours(-6), Remark = "客户加急订单"

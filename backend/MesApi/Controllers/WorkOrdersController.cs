@@ -41,7 +41,7 @@ public class WorkOrdersController(IWorkOrderService orders) : ControllerBase
         => Ok(await orders.ChangeStatusAsync(id, action, ct));
 
     /// <summary>
-    /// 补料：报废把冗余料吃穿之后，计划员追加发料。
+    /// 补料：报废一台补一台，计划员/班组长追加发料。
     /// 前端在工单出现 ReplenishQty &gt; 0 时才提示，但接口本身允许提前补。
     /// </summary>
     [HttpPost("{id:int}/replenish")]

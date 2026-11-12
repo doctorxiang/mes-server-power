@@ -19,7 +19,8 @@ const loading = ref(true)
 const error = ref('')
 const actionMsg = ref('')
 
-// 补料：报废吃掉冗余料之后追加发料，产线才能继续上线
+// 补料：报废一台就补一台，补完才能再上线，最终完工数才能补回计划
+
 const showReplenish = ref(false)
 const replenishQty = ref(0)
 const replenishReason = ref('')
@@ -36,10 +37,20 @@ const remainingMaterial = computed(() => {
 })
 
 function openReplenish() {
-  replenishQty.value = Math.max(summary.value?.replenishQty ?? 0, 5)
-  replenishReason.value = summary.value?.replenishQty ? '报废超出冗余备料' : '提前补料'
+  replenishQty.value = Math.max(summary.value?.replenishQty ?? 0, 1)
+  replenishReason.value = summary.value?.replenishQty ? '报废补料' : '提前备料'
   showReplenish.value = true
 }
+
+/** 已补料量 = 累计发料 − 计划 */
+const replenished = computed(() => Math.max(0, (summary.value?.issuedQty ?? 0) - (summary.value?.planQty ?? 0)))
+
+/** 报废率：报废 ÷ 投入，千分之几属正常 */
+const scrapRate = computed(() => {
+  const s = summary.value
+  if (!s || !s.inputQty) return '0.00'
+  return ((s.scrapQty * 100) / s.inputQty).toFixed(2)
+})
 
 async function submitReplenish() {
   if (!replenishQty.value || replenishQty.value < 1) return
@@ -139,15 +150,19 @@ onBeforeUnmount(() => {
 
           <div class="oh-stats">
             <div><span>计划（良品）</span><strong>{{ summary.planQty }}</strong></div>
+            <div><span>发料（计划 + 补料）</span><strong>{{ summary.issuedQty }}</strong></div>
             <div>
-              <span>发料（含冗余 {{ summary.issuedQty - summary.planQty }}）</span>
-              <strong>{{ summary.issuedQty }}</strong>
+              <span>已上线</span>
+              <strong>{{ summary.inputQty }}</strong>
             </div>
-            <div><span>已上线</span><strong>{{ summary.inputQty }}</strong></div>
             <div><span>完工</span><strong style="color: var(--ok)">{{ summary.completedQty }}</strong></div>
-            <div><span>报废</span><strong style="color: var(--danger)">{{ summary.scrapQty }}</strong></div>
+            <div>
+              <span>报废 <em class="small muted" style="font-style: normal">{{ scrapRate }}%</em></span>
+              <strong style="color: var(--danger)">{{ summary.scrapQty }}</strong>
+            </div>
+            <div><span>补料</span><strong>{{ replenished }}</strong></div>
             <div><span>不良隔离</span><strong style="color: var(--warn, #d97706)">{{ summary.holdQty }}</strong></div>
-            <div><span>FPY</span><strong>{{ detail?.fpy ?? 0 }}%</strong></div>
+            <div><span>直通率 FPY</span><strong>{{ detail?.fpy ?? 0 }}%</strong></div>
           </div>
 
           <div class="oh-actions">
@@ -168,7 +183,7 @@ onBeforeUnmount(() => {
             <span :style="{ width: `${progress}%` }"></span>
           </div>
           <div class="row between small muted" style="margin-top: 6px">
-            <span>完工进度 {{ progress }}%（完工 ÷ 计划，达到计划即完工）</span>
+            <span>完工进度 {{ progress }}%（完工 ÷ 计划，报废后补料，完工到计划即 100%）</span>
             <span>
               {{ summary.completedQty }} / {{ summary.planQty }} 台 · 剩余可用料 {{ remainingMaterial }} 套
             </span>
@@ -203,6 +218,35 @@ onBeforeUnmount(() => {
               <span v-if="idx < (detail?.steps.length ?? 0) - 1" class="fs-arrow">›</span>
             </div>
           </div>
+        </div>
+      </section>
+
+      <section v-if="detail?.scrapUnits?.length" class="card" style="margin-bottom: 16px">
+        <div class="card-head">
+          <h3>报废明细（{{ detail.scrapUnits.length }} 台）</h3>
+          <span class="small muted">报废率 {{ scrapRate }}% · 报废一台补一台，补料 {{ replenished }} 套</span>
+        </div>
+        <div class="table-wrap">
+          <table class="table">
+            <thead>
+              <tr>
+                <th>SN</th>
+                <th>判定工序</th>
+                <th>不良代码</th>
+                <th>报废时间</th>
+                <th>原因</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="sc in detail.scrapUnits" :key="sc.sn" class="clickable" @click="gotoTrace(sc.sn)">
+                <td class="mono">{{ sc.sn }}</td>
+                <td class="small">{{ sc.stepName }}</td>
+                <td><span class="badge badge-danger">{{ sc.defectName }}</span></td>
+                <td class="small muted">{{ sc.scrappedAtUtc ? formatTime(sc.scrappedAtUtc) : '—' }}</td>
+                <td class="small muted">{{ sc.reason }}</td>
+              </tr>
+            </tbody>
+          </table>
         </div>
       </section>
 
@@ -245,7 +289,7 @@ onBeforeUnmount(() => {
       </section>
     </template>
 
-    <!-- 补料：报废吃掉冗余料之后追加发料 -->
+    <!-- 补料：报废一台补一台 -->
     <div v-if="showReplenish" class="modal-mask" @click.self="showReplenish = false">
       <div class="modal" style="max-width: 440px">
         <div class="modal-head">
@@ -254,12 +298,11 @@ onBeforeUnmount(() => {
         </div>
         <div class="modal-body">
           <p class="small muted" style="margin-top: 0">
-            工单 {{ summary?.orderNo }}：计划 {{ summary?.planQty }} 台，已发 {{ summary?.issuedQty }} 套
-            （其中冗余 {{ (summary?.issuedQty ?? 0) - (summary?.planQty ?? 0) }}），已上线 {{ summary?.inputQty }}，
-            已报废 {{ summary?.scrapQty }}。
+            工单 {{ summary?.orderNo }}：计划 {{ summary?.planQty }} 台，已发 {{ summary?.issuedQty }} 套，
+            已上线 {{ summary?.inputQty }}，已报废 {{ summary?.scrapQty }} 台（报废率 {{ scrapRate }}%）。
           </p>
           <p v-if="summary?.replenishQty" class="small" style="color: var(--danger); margin-top: 0">
-            报废已超出冗余 {{ summary.replenishQty }} 套，不补料产线无法继续上线。
+            报废 {{ summary.scrapQty }} 台，其中 {{ summary.replenishQty }} 套还没补 —— 不补料产线无法继续上线，完工也补不到计划数量。
           </p>
           <div class="field">
             <label>补料数量（套）</label>
@@ -267,7 +310,7 @@ onBeforeUnmount(() => {
           </div>
           <div class="field">
             <label>原因</label>
-            <input v-model="replenishReason" class="input" placeholder="如：报废偏高 / 来料不良 / 提前备料" />
+            <input v-model="replenishReason" class="input" placeholder="如：测试判报废补料 / 来料不良 / 提前备料" />
           </div>
           <div class="row" style="justify-content: flex-end; gap: 8px; margin-top: 14px">
             <button class="btn" @click="showReplenish = false">取消</button>

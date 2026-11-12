@@ -51,10 +51,11 @@ const totals = computed(() => {
   return {
     active: active.length,
     plan: active.reduce((s, o) => s + o.planQty, 0),
-    issued: active.reduce((s, o) => s + o.issuedQty, 0),
     completed: orders.value.reduce((s, o) => s + o.completedQty, 0),
+    // 在制单还差多少台才到计划（计划是良品数，等于需求量）
+    remaining: Math.max(0, active.reduce((s, o) => s + o.planQty, 0) - active.reduce((s, o) => s + o.completedQty, 0)),
     hold: orders.value.reduce((s, o) => s + o.holdQty, 0),
-    // 报废把冗余料吃穿、必须补料的单子
+    // 报废后还没补料、卡着上不了线的单子
     shortage: orders.value.filter((o) => o.replenishQty > 0).length,
     shortageQty: orders.value.reduce((s, o) => s + o.replenishQty, 0),
   }
@@ -135,8 +136,8 @@ onMounted(load)
         <div class="value">{{ totals.plan }}<small>台</small></div>
       </div>
       <div class="stat">
-        <div class="label">在制发料</div>
-        <div class="value">{{ totals.issued }}<small>套</small></div>
+        <div class="label">在制待完工</div>
+        <div class="value">{{ totals.remaining }}<small>台</small></div>
       </div>
       <div class="stat ok">
         <div class="label">累计完工</div>
@@ -168,7 +169,7 @@ onMounted(load)
               <th>产品</th>
               <th>产线</th>
               <th style="width: 190px">进度（完工 ÷ 计划）</th>
-              <th>计划 / 发料 / 投入 / 完工</th>
+              <th>计划 / 发料 / 投入 / 完工 <span class="muted" style="font-weight: 400">（报废看详情）</span></th>
               <th>状态</th>
               <th>交期</th>
               <th></th>
@@ -195,7 +196,6 @@ onMounted(load)
               </td>
               <td class="small mono">
                 {{ o.planQty }} / {{ o.issuedQty }} / {{ o.inputQty }} / {{ o.completedQty }}
-                <div class="small muted" v-if="o.scrapQty">报废 {{ o.scrapQty }}（冗余 {{ o.issuedQty - o.planQty }}）</div>
               </td>
               <td>
                 <span class="badge" :class="{

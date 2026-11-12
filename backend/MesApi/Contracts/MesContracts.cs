@@ -32,15 +32,15 @@ public record CreateWorkOrderRequest(
     DateTime DueDateUtc,
     [StringLength(256)] string? Remark);
 
-/// <summary>补料：报废把冗余料吃穿之后，追加发料让产线能继续上线。</summary>
+/// <summary>补料：报废一台补一台，追加发料后产线才能继续上线。</summary>
 public record ReplenishRequest(
     [Range(1, 100_000, ErrorMessage = "补料数量需在 1-100000 之间")] int Qty,
     [StringLength(200)] string? Reason);
 
 /// <summary>
 /// 工单列表行。计划 / 发料 / 投入 / 完工 / 报废五个数字的关系：
-/// 发料 = 计划 + 冗余，投入 = 已上线 SN（只减不增），完工达到计划即 100%，
-/// 报废超过冗余时 ReplenishQty &gt; 0 表示必须补料。
+/// 发料 = 计划（不预置冗余），报废一台补一台，所以完工单通常是 发料 = 计划 + 报废；
+/// 投入 = 已上线 SN（只增不减），完工达到计划即 100%，ReplenishQty &gt; 0 表示还要补料。
 /// </summary>
 public record WorkOrderListItem(
     int Id, string OrderNo, string ProductCode, string ProductName, int LineId, string LineName,
@@ -54,7 +54,12 @@ public record WorkOrderDetail(
     WorkOrderListItem Summary,
     IReadOnlyList<StepProgressDto> Steps,
     IReadOnlyList<UnitRow> RecentUnits,
-    int Fpy);
+    int Fpy,
+    IReadOnlyList<ScrapUnitRow> ScrapUnits);
+
+/// <summary>报废明细：哪台、在哪个工序判的、什么不良、什么时候报废的。</summary>
+public record ScrapUnitRow(
+    string Sn, string StepName, string DefectName, DateTime? ScrappedAtUtc, string Reason);
 
 public record UnitRow(
     long Id, string Sn, int CurrentSeq, string? CurrentStepName, string Status,

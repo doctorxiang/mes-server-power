@@ -134,10 +134,60 @@ public class WorkOrderService(MesDbContext db) : IWorkOrderService
                 : null
         }).ToList();
 
-        var pass = logStats.Where(s => s.Result == "Pass").Sum(s => s.Qty);
-        var fail = logStats.Where(s => s.Result == "Fail").Sum(s => s.Qty);
+        // 直通率 FPY：一次没判过不良就完工的台数 ÷ 投入。
+        // 注意别拿"工序合格率"（Pass ÷ 过站次数）冒充它 —— 一道工序判一次不良，
+        // 一台机走 9 道工序，工序合格率永远 98%，看着漂亮但毫无意义。
+        var failedUnitIds = await db.MoveLogs.AsNoTracking()
+            .Where(l => l.WorkOrderId == id && l.Result == "Fail")
+            .Select(l => l.SerialUnitId)
+            .Distinct()
+            .ToListAsync(ct);
 
-        return new WorkOrderDetail(list[0], steps, units, pass + fail == 0 ? 0 : (int)Math.Round(pass * 100.0 / (pass + fail)));
+        var inputQty = await db.Units.CountAsync(u => u.WorkOrderId == id, ct);
+        var firstPass = await db.Units.CountAsync(u => u.WorkOrderId == id
+            && u.Status == nameof(UnitStatus.Completed) && !failedUnitIds.Contains(u.Id), ct);
+        var fpy = inputQty == 0 ? 0 : (int)Math.Round(firstPass * 100d / inputQty);
+
+        var scrapUnits = await BuildScrapUnitsAsync(id, route, ct);
+
+        return new WorkOrderDetail(list[0], steps, units, fpy, scrapUnits);
+    }
+
+    /// <summary>
+    /// 报废明细：报废台数通常只有一两台，但必须能查到"哪台、哪个工序、什么不良"，
+    /// 否则详情页只有一个数字，工艺和产线都没法复盘。
+    /// </summary>
+    private async Task<List<ScrapUnitRow>> BuildScrapUnitsAsync(
+        int orderId, List<ProductRoute> route, CancellationToken ct)
+    {
+        var scraps = await db.Units.AsNoTracking()
+            .Where(u => u.WorkOrderId == orderId && u.Status == nameof(UnitStatus.Scrapped))
+            .OrderBy(u => u.LastScanAtUtc)
+            .Select(u => new { u.Id, u.Sn, u.LastScanAtUtc })
+            .ToListAsync(ct);
+
+        if (scraps.Count == 0) return [];
+
+        var ids = scraps.Select(s => s.Id).ToList();
+        var fails = await db.MoveLogs.AsNoTracking()
+            .Where(l => ids.Contains(l.SerialUnitId) && l.Result == "Fail")
+            .Select(l => new { l.SerialUnitId, l.Seq, l.DefectCodeId, l.CreatedAtUtc })
+            .ToListAsync(ct);
+
+        var defectNames = await db.DefectCodes.AsNoTracking()
+            .ToDictionaryAsync(d => d.Id, d => d.Name, ct);
+
+        return scraps.Select(s =>
+        {
+            var last = fails.Where(f => f.SerialUnitId == s.Id).OrderByDescending(f => f.Seq).FirstOrDefault();
+            var stepName = last is not null && last.Seq >= 1 && last.Seq <= route.Count
+                ? route[last.Seq - 1].Step!.Name
+                : "—";
+            var defectName = last?.DefectCodeId is int did && defectNames.TryGetValue(did, out var dn) ? dn : "未记录不良代码";
+            return new ScrapUnitRow(
+                s.Sn, stepName, defectName, s.LastScanAtUtc,
+                last is null ? "报废（缺少不良记录）" : $"{stepName}判{defectName} → 维修站判定不可修，报废出站");
+        }).ToList();
     }
 
     public async Task<WorkOrderDetail> CreateAsync(CreateWorkOrderRequest request, int userId, CancellationToken ct)
@@ -160,7 +210,7 @@ public class WorkOrderService(MesDbContext db) : IWorkOrderService
             ProductId = product.Id,
             LineId = line.Id,
             PlanQty = request.PlanQty,
-            // 计划数量是良品数，实发要按目标直通率多备一截（120 台 → 142 套），报废从这块冗余里扣
+            // 发料 = 计划（不预置冗余）。真报废了再走补料追加，报废率是千分之几，没必要一上来多备 15%
             IssuedQty = MaterialPlanning.IssuedFor(request.PlanQty),
             // 计划员建单即为已下发（简化流程：建单即下发，避免多一步审批）
             Status = nameof(WorkOrderStatus.Released),

@@ -29,7 +29,7 @@ public class DemoController(MesDbContext db, IConfiguration config, ILogger<Demo
     }
 
     /// <summary>
-    /// POST /api/demo/reset —— 清空生产数据（工单/SN/流水/维修/异常/日报）后按"计划+冗余发料"口径重建。
+    /// POST /api/demo/reset —— 清空生产数据（工单/SN/流水/维修/异常/日报）后按"发料=计划、报废补料"口径重建。
     /// 主数据与账号不动，所以前端不用重新登录。
     /// </summary>
     [HttpPost("reset")]

@@ -197,11 +197,11 @@ export interface WorkOrderListItem {
   plannedStartUtc: string
   dueDateUtc: string
   createdAtUtc: string
-  /** 累计发料（计划 + 冗余 + 补料），产线只能在这里面投产 */
+  /** 累计发料（计划 + 补料），产线只能在这里面投产 */
   issuedQty: number
-  /** 已报废台数，从冗余料里扣 */
+  /** 已报废台数（千分之几，报废一台补一台） */
   scrapQty: number
-  /** 报废超出冗余的缺口，>0 时必须补料才能继续上线 */
+  /** 报废后还没补的缺口，>0 时必须补料才能继续上线 */
   replenishQty: number
 }
 
@@ -227,11 +227,21 @@ export interface UnitRow {
   lastScanAtUtc: string
 }
 
+/** 报废明细：哪台、哪个工序判的、什么不良、什么时候报废的 */
+export interface ScrapUnitRow {
+  sn: string
+  stepName: string
+  defectName: string
+  scrappedAtUtc: string | null
+  reason: string
+}
+
 export interface WorkOrderDetail {
   summary: WorkOrderListItem
   steps: StepProgress[]
   recentUnits: UnitRow[]
   fpy: number
+  scrapUnits: ScrapUnitRow[]
 }
 
 export interface ScanResponse {

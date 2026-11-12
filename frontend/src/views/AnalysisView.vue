@@ -89,7 +89,7 @@ onMounted(load)
 </script>
 
 <template>
-  <AppShell title="良率分析" subtitle="按工单 / 机种看直通率与一次通过率，定位最该改善的工序与不良">
+  <AppShell title="良率分析" subtitle="按工单 / 机种看良品率与直通率（FPY），定位最该改善的工序与不良">
     <div v-if="error" class="alert alert-error" style="margin-bottom: 14px">{{ error }}</div>
 
     <section class="card" style="margin-bottom: 14px">
@@ -104,7 +104,7 @@ onMounted(load)
           <option value="all">全部</option>
         </select>
         <button class="btn" :disabled="loading" @click="load">{{ loading ? '计算中…' : '刷新' }}</button>
-        <span class="small muted">直通率 = 完工 ÷ 投入（含返修）· 一次通过率 FPY = 从未判不良且完工 ÷ 投入</span>
+        <span class="small muted">良品率 = 完工 ÷ 投入 · 直通率 FPY = 一次没判不良就完工 ÷ 投入（差出来的就是返修救回的）</span>
       </div>
     </section>
 
@@ -119,10 +119,10 @@ onMounted(load)
         <span>不良次数</span><strong>{{ summary.fail }}</strong><em>次</em>
       </div>
       <div class="mini" :class="tone(summary.yield)">
-        <span>直通率</span><strong>{{ summary.yield }}</strong><em>%</em>
+        <span>良品率</span><strong>{{ summary.yield }}</strong><em>%</em>
       </div>
       <div class="mini" :class="tone(summary.fpy)">
-        <span>一次通过率</span><strong>{{ summary.fpy }}</strong><em>%</em>
+        <span>直通率 FPY</span><strong>{{ summary.fpy }}</strong><em>%</em>
       </div>
     </div>
 
@@ -142,8 +142,8 @@ onMounted(load)
                 <th>完工</th>
                 <th>隔离</th>
                 <th>不良</th>
+                <th>良品率</th>
                 <th>直通率</th>
-                <th>FPY</th>
               </tr>
             </thead>
             <tbody>

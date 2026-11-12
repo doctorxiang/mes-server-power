@@ -130,8 +130,8 @@ public class ProductionService(
             if (!passed)
                 throw new AppException("首站上线不能判定不良，请先完成上线", StatusCodes.Status400BadRequest);
 
-            // 物料闸门：发料总量（计划 + 冗余 + 补料）是硬上限。
-            // 卡在这里说明冗余料被报废吃穿了，必须走补料单追加发料才能继续上线。
+            // 物料闸门：累计发料（计划 + 补料）是硬上限。
+            // 卡在这里说明报废的料还没补，必须走补料单追加发料才能继续上线。
             var issued = MaterialPlanning.EffectiveIssued(order);
             var started = await db.Units.CountAsync(u => u.WorkOrderId == order.Id, ct);
             if (started >= issued)
