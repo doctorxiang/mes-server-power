@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { computed, ref, onMounted, onBeforeUnmount } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import NavIcon from '@/components/NavIcon.vue'
 import { useAuthStore } from '@/stores/auth'
 import { ROLE_LABELS } from '@/types'
 import { formatClock } from '@/utils/format'
@@ -13,10 +14,46 @@ const router = useRouter()
 
 const now = ref(new Date())
 let timer: number | undefined
-onMounted(() => {
-  timer = window.setInterval(() => (now.value = new Date()), 1000 * 20)
-})
-onBeforeUnmount(() => window.clearInterval(timer))
+
+/* ---------------- 侧边栏三态：展开 / 收起成图标条 / 关闭 ---------------- */
+type SidebarMode = 'full' | 'icon' | 'hidden'
+const SIDEBAR_KEY = 'mes.sidebarMode'
+const BRANCH_KEY = 'mes.navClosed'
+
+function loadMode(): SidebarMode {
+  const v = localStorage.getItem(SIDEBAR_KEY)
+  return v === 'icon' || v === 'hidden' ? v : 'full'
+}
+
+const sidebarMode = ref<SidebarMode>(loadMode())
+
+function setMode(m: SidebarMode) {
+  sidebarMode.value = m
+  localStorage.setItem(SIDEBAR_KEY, m)
+}
+
+/** 收起按钮：隐藏 → 展开；展开 ↔ 图标条 */
+function toggleCollapse() {
+  setMode(sidebarMode.value === 'full' ? 'icon' : 'full')
+}
+
+/* ---------------- 二级菜单展开 / 收起（工单管理 → 工单列表 / 工单报告） ---------------- */
+function loadClosed(): string[] {
+  try {
+    const raw = localStorage.getItem(BRANCH_KEY)
+    const arr = raw ? JSON.parse(raw) : []
+    return Array.isArray(arr) ? arr.filter((x): x is string => typeof x === 'string') : []
+  } catch {
+    return []
+  }
+}
+
+/** 存的是「被手动收起的分组」，默认展开，只有点过收起的分组才在里面 */
+const closedBranches = ref<string[]>(loadClosed())
+
+function persistClosed() {
+  localStorage.setItem(BRANCH_KEY, JSON.stringify(closedBranches.value))
+}
 
 const pageTitle = computed(() => (route.meta.title as string) ?? '电源 MES')
 const roleLabel = computed(() => ROLE_LABELS[auth.role] ?? auth.role)
@@ -73,6 +110,71 @@ const navGroups = computed<{ label: string; items: NavItem[] }[]>(() => [
   },
 ])
 
+/** 当前路由落在这个分组的路径里（含工单详情这类子路径） */
+function inBranch(item: NavItem): boolean {
+  return route.path === item.to || route.path.startsWith(`${item.to}/`)
+}
+
+function isBranchOpen(item: NavItem): boolean {
+  return !closedBranches.value.includes(item.to)
+}
+
+function openBranch(item: NavItem) {
+  if (!closedBranches.value.includes(item.to)) return
+  closedBranches.value = closedBranches.value.filter((k) => k !== item.to)
+  persistClosed()
+}
+
+function toggleBranch(item: NavItem) {
+  // 图标条模式下点分组 = 先把侧边栏展开，再保证这个分组是开的（否则点了像没反应）
+  if (sidebarMode.value !== 'full') {
+    setMode('full')
+    openBranch(item)
+    return
+  }
+  if (isBranchOpen(item)) {
+    closedBranches.value = [...closedBranches.value, item.to]
+    persistClosed()
+  } else {
+    openBranch(item)
+  }
+}
+
+// 每个页面各挂一个 AppShell，进入时按当前路由校正一次；
+// 落在「工单报告 / 工单详情」这类二级路径时强制展开分组，
+// 但停在工单列表（分组首页）时保留用户上次的收起状态。
+function syncActiveBranch() {
+  const hit = navGroups.value
+    .flatMap((g) => g.items)
+    .filter((it) => it.children?.length && route.path !== it.to && inBranch(it))
+  if (!hit.length) return
+  const next = closedBranches.value.filter((k) => !hit.some((it) => it.to === k))
+  if (next.length !== closedBranches.value.length) {
+    closedBranches.value = next
+    persistClosed()
+  }
+}
+
+syncActiveBranch()
+watch(() => route.path, syncActiveBranch)
+
+function onKeydown(e: KeyboardEvent) {
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'b') {
+    e.preventDefault()
+    toggleCollapse()
+  }
+}
+
+onMounted(() => {
+  timer = window.setInterval(() => (now.value = new Date()), 1000 * 20)
+  window.addEventListener('keydown', onKeydown)
+})
+
+onBeforeUnmount(() => {
+  window.clearInterval(timer)
+  window.removeEventListener('keydown', onKeydown)
+})
+
 async function logout() {
   await auth.logout()
   router.replace('/login')
@@ -80,7 +182,7 @@ async function logout() {
 </script>
 
 <template>
-  <div class="app-shell">
+  <div class="app-shell" :class="`mode-${sidebarMode}`">
     <aside class="sidebar">
       <div class="sidebar-brand">
         <div class="brand-logo">MES</div>
@@ -93,66 +195,56 @@ async function logout() {
       <nav class="nav">
         <template v-for="group in navGroups" :key="group.label">
           <div class="nav-group">{{ group.label }}</div>
+
           <template v-for="item in group.items" :key="item.to">
-            <RouterLink :to="item.to" class="nav-item">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-                <template v-if="item.icon === 'scan'">
-                  <path d="M3 7V5a2 2 0 0 1 2-2h2M17 3h2a2 2 0 0 1 2 2v2M21 17v2a2 2 0 0 1-2 2h-2M7 21H5a2 2 0 0 1-2-2v-2" />
-                  <path d="M7 8v8M11 8v8M15 8v8M17 8v8" />
-                </template>
-                <template v-else-if="item.icon === 'orders'">
-                  <path d="M9 3h6l1 3H8l1-3Z" />
-                  <path d="M5 6h14v15H5z" />
-                  <path d="M9 12h6M9 16h4" />
-                </template>
-                <template v-else-if="item.icon === 'board'">
-                  <rect x="3" y="4" width="18" height="12" rx="2" />
-                  <path d="M8 20h8M12 16v4M7 12l3-3 2 2 4-4" />
-                </template>
-                <template v-else-if="item.icon === 'trace'">
-                  <circle cx="11" cy="11" r="7" />
-                  <path d="m20 20-3.5-3.5M8 11h6M11 8v6" />
-                </template>
-                <template v-else-if="item.icon === 'qc'">
-                  <path d="M6 3h9l4 4v14a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1Z" />
-                  <path d="M14 3v4h4" />
-                  <path d="M8.5 13.5 11 16l4.5-5" />
-                </template>
-                <template v-else-if="item.icon === 'master'">
-                  <path d="M4 6c0-1.7 3.6-3 8-3s8 1.3 8 3-3.6 3-8 3-8-1.3-8-3Z" />
-                  <path d="M4 6v6c0 1.7 3.6 3 8 3s8-1.3 8-3V6" />
-                  <path d="M4 12v6c0 1.7 3.6 3 8 3s8-1.3 8-3v-6" />
-                </template>
-                <template v-else-if="item.icon === 'aps'">
-                  <rect x="3" y="5" width="18" height="16" rx="2" />
-                  <path d="M3 10h18M8 3v4M16 3v4" />
-                  <path d="M7 14h4M7 17h7" />
-                </template>
-                <template v-else-if="item.icon === 'analysis'">
-                  <path d="M4 20V10M10 20V4M16 20v-7M22 20H2" />
-                </template>
-                <template v-else-if="item.icon === 'files'">
-                  <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7Z" />
-                  <path d="M3 11h18" />
-                </template>
-                <template v-else-if="item.icon === 'audit'">
-                  <path d="M7 3h7l4 4v13a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1Z" />
-                  <path d="M13 3v5h5" />
-                  <path d="m9 14 1.8 1.8L14.5 12" />
-                </template>
-                <template v-else>
-                  <circle cx="9" cy="8" r="3.2" />
-                  <path d="M3 20c0-3.3 2.7-5.5 6-5.5s6 2.2 6 5.5" />
-                  <path d="M16 4.5a3 3 0 0 1 0 6M18 20c0-2.4-1-4.2-2.5-5" />
-                </template>
-              </svg>
-              <span>{{ item.label }}</span>
-            </RouterLink>
-            <div v-if="item.children" class="nav-sub">
-              <RouterLink v-for="child in item.children" :key="child.to" :to="child.to" class="nav-sub-item">
-                {{ child.label }}
-              </RouterLink>
+            <!-- 带子项：分组标题负责收起/展开，子项负责导航 -->
+            <div
+              v-if="item.children"
+              class="nav-branch"
+              :class="{ open: isBranchOpen(item), current: inBranch(item) }"
+            >
+              <button
+                type="button"
+                class="nav-item nav-parent"
+                :title="item.label"
+                :aria-expanded="isBranchOpen(item)"
+                @click="toggleBranch(item)"
+              >
+                <NavIcon :name="item.icon" />
+                <span class="nav-label">{{ item.label }}</span>
+                <svg
+                  class="nav-caret"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                >
+                  <path d="m9 6 6 6-6 6" />
+                </svg>
+              </button>
+
+              <div class="nav-sub-wrap">
+                <div class="nav-sub">
+                  <RouterLink
+                    v-for="child in item.children"
+                    :key="child.to"
+                    :to="child.to"
+                    class="nav-sub-item"
+                    :title="child.label"
+                  >
+                    <span class="nav-sub-dot"></span>
+                    {{ child.label }}
+                  </RouterLink>
+                </div>
+              </div>
             </div>
+
+            <RouterLink v-else :to="item.to" class="nav-item" :title="item.label">
+              <NavIcon :name="item.icon" />
+              <span class="nav-label">{{ item.label }}</span>
+            </RouterLink>
           </template>
         </template>
       </nav>
@@ -165,7 +257,45 @@ async function logout() {
 
     <div class="main">
       <header class="topbar">
-        <div class="topbar-title">{{ pageTitle }}</div>
+        <div class="topbar-left">
+          <div class="layout-switch">
+            <button
+              v-if="sidebarMode === 'hidden'"
+              class="btn-icon"
+              title="显示侧边栏（Ctrl+B）"
+              @click="setMode('full')"
+            >
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                <rect x="3" y="4" width="18" height="16" rx="2" />
+                <path d="M9 4v16" />
+                <path d="m14 10 2 2-2 2" />
+              </svg>
+            </button>
+            <template v-else>
+              <button
+                class="btn-icon"
+                :title="sidebarMode === 'full' ? '收起侧边栏（Ctrl+B）' : '展开侧边栏（Ctrl+B）'"
+                @click="toggleCollapse"
+              >
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                  <rect x="3" y="4" width="18" height="16" rx="2" />
+                  <path d="M9 4v16" />
+                  <path v-if="sidebarMode === 'full'" d="m16 9-3 3 3 3" />
+                  <path v-else d="m13 9 3 3-3 3" />
+                </svg>
+              </button>
+              <button class="btn-icon" title="关闭侧边栏" @click="setMode('hidden')">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                  <rect x="3" y="4" width="18" height="16" rx="2" />
+                  <path d="M9 4v16" />
+                  <path d="m14 9 5 6m0-6-5 6" />
+                </svg>
+              </button>
+            </template>
+          </div>
+          <div class="topbar-title">{{ pageTitle }}</div>
+        </div>
+
         <div class="topbar-meta">
           <span class="mono">{{ formatClock(now) }}</span>
           <div class="user-chip">

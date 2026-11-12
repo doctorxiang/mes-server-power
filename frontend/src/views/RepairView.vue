@@ -467,7 +467,8 @@ onBeforeUnmount(() => {
                   </tr>
                 </thead>
                 <tbody>
-                  <tr v-for="row in queue" :key="row.unitId">
+                  <!-- 点击行 = 直接带入 SN 查询并出进站表单，比复制粘贴快 -->
+                  <tr v-for="row in queue" :key="row.unitId" class="clickable" @click="lookup(row.sn)">
                     <td class="mono">
                       {{ row.sn }}
                       <span v-if="row.repairing" class="badge badge-warn" style="margin-left: 6px">维修中</span>
