@@ -25,6 +25,62 @@ services:
       retries: 10
       start_period: 30s
 
+  # 缓存：主数据、看板聚合结果。后端未配置 Redis:ConnectionString 时自动降级进程内缓存
+  redis:
+    image: redis:7-alpine
+    container_name: mes-redis
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes", "--maxmemory", "512mb", "--maxmemory-policy", "allkeys-lru"]
+    ports:
+      - "6379:6379"
+    volumes:
+      - mes-redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  # 消息队列：扫码事件 → 看板推送，高峰解耦。管理台 http://localhost:15672
+  rabbitmq:
+    image: rabbitmq:3.13-management-alpine
+    container_name: mes-rabbitmq
+    restart: unless-stopped
+    environment:
+      RABBITMQ_DEFAULT_USER: mes
+      RABBITMQ_DEFAULT_PASS: ${MES_DB_PASSWORD}
+      RABBITMQ_DEFAULT_VHOST: /
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    volumes:
+      - mes-rabbitmq-data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+
+  # 对象存储：图纸/SOP/检验报告。控制台 http://localhost:9001（mes / ${MINIO_ROOT_PASSWORD}）
+  minio:
+    image: minio/minio:latest
+    container_name: mes-minio
+    restart: unless-stopped
+    command: ["server", "/data", "--console-address", ":9001"]
+    environment:
+      MINIO_ROOT_USER: mes
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - mes-minio-data:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+
   adminer:
     image: adminer:latest
     container_name: mes-adminer
@@ -39,3 +95,6 @@ services:
 
 volumes:
   mes-mysql-data:
+  mes-redis-data:
+  mes-rabbitmq-data:
+  mes-minio-data:

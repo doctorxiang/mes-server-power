@@ -37,8 +37,9 @@ public class ProductionController(IProductionService production) : ControllerBas
     /// <summary>维修站：待维修队列（隔离中的 SN，含维修次数与在修标记）。</summary>
     [HttpGet("repair/pending")]
     [Authorize(Roles = $"{Roles.Admin},{Roles.Leader},{Roles.Qc}")]
-    public async Task<ActionResult<IReadOnlyList<RepairPendingRow>>> RepairPending([FromQuery] int limit, CancellationToken ct)
-        => Ok(await production.RepairPendingAsync(limit, ct));
+    public async Task<ActionResult<IReadOnlyList<RepairPendingRow>>> RepairPending(
+        [FromQuery] int limit, [FromQuery] string? orderNo, [FromQuery] string? product, CancellationToken ct)
+        => Ok(await production.RepairPendingAsync(limit, orderNo, product, ct));
 
     /// <summary>维修站进站：SN 确认维修，开维修记录（重复维修超上限需管理员 force）。</summary>
     [HttpPost("repair/checkin")]

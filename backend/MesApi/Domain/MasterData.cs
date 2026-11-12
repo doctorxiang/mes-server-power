@@ -37,6 +37,9 @@ public class ProcessStep
     /// <summary>是否关键工序：不良需班组长确认后才可放行（MVP 仅做标记与看板提醒）。</summary>
     public bool IsKey { get; set; }
 
+    /// <summary>标准节拍：单台在该工序的理论耗时（秒）。APS 排程与产能测算的输入。</summary>
+    public int TaktSeconds { get; set; } = 60;
+
     public bool IsActive { get; set; } = true;
 }
 

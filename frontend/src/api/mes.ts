@@ -1,10 +1,12 @@
 import { api } from './client'
 import type {
+  ApsResult,
   AuditDetail,
   AuditRow,
   AuthResponse,
   Dashboard,
   ExceptionRow,
+  FileDocRow,
   MasterBootstrap,
   PagedResult,
   RecentLog,
@@ -15,6 +17,7 @@ import type {
   User,
   WorkOrderDetail,
   WorkOrderListItem,
+  YieldResult,
 } from '@/types'
 
 export const authApi = {
@@ -69,8 +72,8 @@ export const mesApi = {  bootstrap: () => api.get<MasterBootstrap>('/master/boot
   handleHold: (sn: string, action: 'rework' | 'scrap', remark?: string) =>
     api.post('/production/hold-handle', { action, remark }, { params: { sn } }),
 
-  repairPending: (limit = 50) =>
-    api.get<RepairPendingRow[]>('/production/repair/pending', { params: { limit } }),
+  repairPending: (limit = 50, orderNo?: string, product?: string) =>
+    api.get<RepairPendingRow[]>('/production/repair/pending', { params: { limit, orderNo, product } }),
   repairCheckin: (payload: {
     sn: string
     action: string
@@ -105,4 +108,28 @@ export const auditApi = {
     size?: number
   }) => api.get<PagedResult<AuditRow>>('/audit', { params }),
   detail: (id: number) => api.get<AuditDetail>(`/audit/${id}`),
+}
+
+/** APS 排程：有限产能正排 */
+export const apsApi = {
+  run: (includeDraft = false) => api.post<ApsResult>('/aps/run', null, { params: { includeDraft } }),
+}
+
+/** 良率 / 不良率分析 */
+export const analysisApi = {
+  yield: (by: 'order' | 'product', from?: string, to?: string) =>
+    api.get<YieldResult>('/analysis/yield', { params: { by, from, to } }),
+}
+
+/** 图纸 / SOP / 检验报告等非结构化文件 */
+export const fileApi = {
+  list: (params: { category?: string; productId?: number; workOrderId?: number; sn?: string; page?: number; size?: number }) =>
+    api.get<{ total: number; page: number; size: number; storage: string; items: FileDocRow[] }>('/files', { params }),
+  upload: (form: FormData) =>
+    api.post<{ id: number; fileName: string; category: string; storage: string }>('/files', form, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+      timeout: 60000,
+    }),
+  download: (id: number) => api.get<Blob>(`/files/${id}/content`, { responseType: 'blob' }),
+  remove: (id: number) => api.delete<{ message: string }>(`/files/${id}`),
 }

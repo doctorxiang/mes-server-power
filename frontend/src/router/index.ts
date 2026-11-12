@@ -48,6 +48,24 @@ const router = createRouter({
       meta: { title: '维修站', roles: ['Admin', 'Leader', 'Qc'] },
     },
     {
+      path: '/analysis',
+      name: 'analysis',
+      component: () => import('@/views/AnalysisView.vue'),
+      meta: { title: '良率分析', roles: ['Admin', 'Planner', 'Leader', 'Qc', 'Viewer'] },
+    },
+    {
+      path: '/aps',
+      name: 'aps',
+      component: () => import('@/views/ApsView.vue'),
+      meta: { title: 'APS 排程', roles: ['Admin', 'Planner', 'Leader'] },
+    },
+    {
+      path: '/files',
+      name: 'files',
+      component: () => import('@/views/FilesView.vue'),
+      meta: { title: '工艺文件' },
+    },
+    {
       path: '/master',
       name: 'master',
       component: () => import('@/views/MasterView.vue'),

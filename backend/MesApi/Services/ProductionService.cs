@@ -3,6 +3,7 @@ using MesApi.Data;
 using MesApi.Domain;
 using MesApi.Hubs;
 using MesApi.Infrastructure;
+using MesApi.Infrastructure.Messaging;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Caching.Memory;
 
@@ -13,7 +14,7 @@ public interface IProductionService
     Task<ScanResponse> ScanAsync(ScanRequest request, int operatorId, string operatorName, CancellationToken ct);
     Task<IReadOnlyList<RecentLogRow>> RecentAsync(string? stepCode, int limit, CancellationToken ct);
     Task<UnitActionResponse> HandleHoldAsync(string sn, HandleHoldRequest request, int operatorId, string operatorName, CancellationToken ct);
-    Task<IReadOnlyList<RepairPendingRow>> RepairPendingAsync(int limit, CancellationToken ct);
+    Task<IReadOnlyList<RepairPendingRow>> RepairPendingAsync(int limit, string? orderNo, string? product, CancellationToken ct);
     Task<RepairRecordRow> RepairCheckinAsync(RepairCheckinRequest request, int operatorId, string operatorName, CancellationToken ct);
     Task<UnitActionResponse> RepairCheckoutAsync(RepairCheckoutRequest request, int operatorId, string operatorName, CancellationToken ct);
 }
@@ -26,7 +27,7 @@ public interface IProductionService
 public class ProductionService(
     MesDbContext db,
     IMemoryCache cache,
-    IBoardNotifier notifier,
+    Infrastructure.Messaging.IMessageBus eventBus,
     ILogger<ProductionService> logger) : IProductionService
 {
     private sealed record RouteStep(int Seq, int StepId, string Code, string Name, bool RequireDefect, bool IsInspection);
@@ -263,16 +264,16 @@ public class ProductionService(
         if (unit.Status == nameof(UnitStatus.Completed))
             await TryCompleteOrderAsync(order, ct);
 
-        // 10. 看板推送（失败不影响报工）
+        // 10. 发布扫码事件（RabbitMQ / 进程内，看板消费者负责推送；失败不影响报工）
         try
         {
-            await notifier.ScanAsync(new BoardScanEvent(
+            await eventBus.PublishScanReceivedAsync(new ScanReceivedEvent(
                 sn, order.OrderNo, step.Code, step.Name, passed ? "Pass" : "Fail",
                 operatorName, stationCode, now, FactoryClock.Today), ct);
         }
         catch (Exception ex)
         {
-            logger.LogDebug(ex, "看板推送失败（忽略）");
+            logger.LogDebug(ex, "扫码事件发布失败（忽略）");
         }
 
         var (passQty, failQty) = await TodayCountsAsync(order.LineId, step.Id, today, ct);
@@ -372,13 +373,22 @@ public class ProductionService(
 
     // ---------------- 维修站 ----------------
 
-    /// <summary>待维修队列：隔离中的 SN + 最后不良信息 + 历史维修次数/是否维修中。</summary>
-    public async Task<IReadOnlyList<RepairPendingRow>> RepairPendingAsync(int limit, CancellationToken ct)
+    /// <summary>待维修队列：隔离中的 SN + 最后不良信息 + 历史维修次数/是否维修中。支持按工单号、机种筛选。</summary>
+    public async Task<IReadOnlyList<RepairPendingRow>> RepairPendingAsync(int limit, string? orderNo, string? product, CancellationToken ct)
     {
         limit = Math.Clamp(limit, 1, 100);
 
-        var units = await db.Units.AsNoTracking()
-            .Where(u => u.Status == nameof(UnitStatus.Hold))
+        var units = db.Units.AsNoTracking()
+            .Where(u => u.Status == nameof(UnitStatus.Hold));
+
+        // 筛选条件下推到 SQL；机种按名称或编码模糊匹配（维修员不一定记得编码）
+        if (!string.IsNullOrWhiteSpace(orderNo))
+            units = units.Where(u => u.WorkOrder!.OrderNo.Contains(orderNo));
+        if (!string.IsNullOrWhiteSpace(product))
+            units = units.Where(u => u.WorkOrder!.Product!.Name.Contains(product)
+                                  || u.WorkOrder!.Product!.Code.Contains(product));
+
+        var list = await units
             .OrderBy(u => u.LastScanAtUtc)
             .Take(limit)
             .Select(u => new
@@ -394,10 +404,10 @@ public class ProductionService(
             })
             .ToListAsync(ct);
 
-        if (units.Count == 0)
+        if (list.Count == 0)
             return Array.Empty<RepairPendingRow>();
 
-        var ids = units.Select(u => u.Id).ToList();
+        var ids = list.Select(u => u.Id).ToList();
 
         // 每个 SN 最近一次 Fail 的不良代码
         var lastFails = await db.MoveLogs.AsNoTracking()
@@ -421,7 +431,7 @@ public class ProductionService(
             })
             .ToDictionaryAsync(x => x.SerialUnitId, ct);
 
-        return units.Select(u =>
+        return list.Select(u =>
         {
             repairStats.TryGetValue(u.Id, out var stat);
             failDict.TryGetValue(u.Id, out var fail);

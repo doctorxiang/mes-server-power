@@ -33,11 +33,16 @@ public static class HealthEndpoints
             time = DateTime.UtcNow
         })).AllowAnonymous().WithTags("health");
 
-        app.MapMethods("/health/ready", ["GET", "HEAD"], async (HealthCheckService health, MesDbContext db, IConfiguration cfg) =>
+        app.MapMethods("/health/ready", ["GET", "HEAD"], async (
+            HealthCheckService health, MesDbContext db, IConfiguration cfg,
+            ICacheService cache, Messaging.IMessageBus bus, Storage.IFileStorage storage) =>
         {
             var report = await health.CheckHealthAsync(c => c.Tags.Contains("ready"));
             var pending = await PendingMigrationsAsync(db);
             var diskFreeGb = FreeDiskGb();
+
+            // 主动读一次缓存：触发 Redis 懒连接，让探活结果反映真实中间件状态（而不是"还没连过"）
+            await cache.GetAsync<string>("health:probe");
 
             var ok = report.Status == HealthStatus.Healthy && pending == 0;
             var body = new
@@ -47,6 +52,14 @@ public static class HealthEndpoints
                 version = Version,
                 pendingMigrations = pending,
                 diskFreeGb,
+                // 三个平台组件的实际后端：redis/memory、rabbitmq/in-memory、s3-minio/local-disk
+                infra = new
+                {
+                    cache = cache.Backend,
+                    messaging = bus.Backend,
+                    storage = storage.Backend,
+                    scheduler = "quartz"
+                },
                 checks = report.Entries.Select(e => new
                 {
                     name = e.Key,

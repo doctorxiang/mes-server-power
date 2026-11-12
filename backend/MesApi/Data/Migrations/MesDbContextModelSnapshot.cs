@@ -161,6 +161,49 @@ namespace MesApi.Data.Migrations
                     b.ToTable("audit_log", (string)null);
                 });
 
+            modelBuilder.Entity("MesApi.Domain.DailyReport", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    MySqlPropertyBuilderExtensions.UseMySqlIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<int>("CompletedQty")
+                        .HasColumnType("int");
+
+                    b.Property<int>("FailQty")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime>("GeneratedAtUtc")
+                        .HasColumnType("datetime(6)");
+
+                    b.Property<int>("InputQty")
+                        .HasColumnType("int");
+
+                    b.Property<int>("LineId")
+                        .HasColumnType("int");
+
+                    b.Property<string>("ReportDate")
+                        .IsRequired()
+                        .HasMaxLength(10)
+                        .HasColumnType("varchar(10)");
+
+                    b.Property<string>("TopDefectsJson")
+                        .HasMaxLength(1024)
+                        .HasColumnType("varchar(1024)");
+
+                    b.Property<int>("YieldTenths")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ReportDate", "LineId")
+                        .IsUnique();
+
+                    b.ToTable("daily_report", (string)null);
+                });
+
             modelBuilder.Entity("MesApi.Domain.DefectCode", b =>
                 {
                     b.Property<int>("Id")
@@ -261,6 +304,75 @@ namespace MesApi.Data.Migrations
                     b.ToTable("exception_event", (string)null);
                 });
 
+            modelBuilder.Entity("MesApi.Domain.FileDocument", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    MySqlPropertyBuilderExtensions.UseMySqlIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("Category")
+                        .IsRequired()
+                        .HasMaxLength(24)
+                        .HasColumnType("varchar(24)");
+
+                    b.Property<string>("ContentType")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("varchar(128)");
+
+                    b.Property<DateTime>("CreatedAtUtc")
+                        .HasColumnType("datetime(6)");
+
+                    b.Property<string>("FileName")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("varchar(256)");
+
+                    b.Property<string>("ObjectKey")
+                        .IsRequired()
+                        .HasMaxLength(320)
+                        .HasColumnType("varchar(320)");
+
+                    b.Property<int?>("ProductId")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Remark")
+                        .HasMaxLength(256)
+                        .HasColumnType("varchar(256)");
+
+                    b.Property<long>("SizeBytes")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("Sn")
+                        .HasMaxLength(64)
+                        .HasColumnType("varchar(64)");
+
+                    b.Property<string>("UploadedByName")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("varchar(32)");
+
+                    b.Property<int>("UploadedByUserId")
+                        .HasColumnType("int");
+
+                    b.Property<int?>("WorkOrderId")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ProductId");
+
+                    b.HasIndex("Sn");
+
+                    b.HasIndex("WorkOrderId");
+
+                    b.HasIndex("Category", "CreatedAtUtc");
+
+                    b.ToTable("file_document", (string)null);
+                });
+
             modelBuilder.Entity("MesApi.Domain.ProcessStep", b =>
                 {
                     b.Property<int>("Id")
@@ -292,6 +404,9 @@ namespace MesApi.Data.Migrations
 
                     b.Property<bool>("RequireDefect")
                         .HasColumnType("tinyint(1)");
+
+                    b.Property<int>("TaktSeconds")
+                        .HasColumnType("int");
 
                     b.HasKey("Id");
 
@@ -793,6 +908,23 @@ namespace MesApi.Data.Migrations
                         .WithMany()
                         .HasForeignKey("WorkOrderId")
                         .OnDelete(DeleteBehavior.SetNull);
+
+                    b.Navigation("WorkOrder");
+                });
+
+            modelBuilder.Entity("MesApi.Domain.FileDocument", b =>
+                {
+                    b.HasOne("MesApi.Domain.Product", "Product")
+                        .WithMany()
+                        .HasForeignKey("ProductId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.HasOne("MesApi.Domain.WorkOrder", "WorkOrder")
+                        .WithMany()
+                        .HasForeignKey("WorkOrderId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.Navigation("Product");
 
                     b.Navigation("WorkOrder");
                 });

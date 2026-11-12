@@ -265,6 +265,9 @@ public static class FactoryClock
 
     public static DateTime NowLocal => TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, Tz);
 
+    /// <summary>工厂时区（东八区），供外部做 UTC → 本地显示的转换。</summary>
+    public static TimeZoneInfo TimeZone => Tz;
+
     public static string Today => NowLocal.ToString("yyyy-MM-dd");
 
     public static string DateOf(DateTime utc) => TimeZoneInfo.ConvertTimeFromUtc(utc, Tz).ToString("yyyy-MM-dd");

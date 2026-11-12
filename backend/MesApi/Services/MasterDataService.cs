@@ -1,8 +1,8 @@
 using MesApi.Contracts;
 using MesApi.Data;
 using MesApi.Domain;
+using MesApi.Infrastructure;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Caching.Memory;
 
 namespace MesApi.Services;
 
@@ -11,15 +11,18 @@ public interface IMasterDataService
     Task<MasterBootstrap> GetBootstrapAsync(CancellationToken ct);
 }
 
-public class MasterDataService(MesDbContext db, IMemoryCache cache) : IMasterDataService
+/// <summary>
+/// 主数据引导包：缓存到 Redis（未配置时自动降级进程内）。
+/// 200 台终端开机集中拉取走缓存，不打爆库；将来多实例部署时缓存天然共享。
+/// </summary>
+public class MasterDataService(MesDbContext db, ICacheService cache) : IMasterDataService
 {
     private const string CacheKey = "master:bootstrap";
 
     public async Task<MasterBootstrap> GetBootstrapAsync(CancellationToken ct)
     {
-        // 主数据变更极少：进程内缓存 2 分钟，供 200 台终端启动时集中拉取
-        if (cache.TryGetValue(CacheKey, out MasterBootstrap? cached) && cached is not null)
-            return cached;
+        var cached = await cache.GetAsync<MasterBootstrap>(CacheKey);
+        if (cached is not null) return cached;
 
         var lines = await db.Lines.AsNoTracking().Where(x => x.IsActive)
             .OrderBy(x => x.Id)
@@ -56,7 +59,7 @@ public class MasterDataService(MesDbContext db, IMemoryCache cache) : IMasterDat
             .ToList();
 
         var result = new MasterBootstrap(lines, stations, defects, productDtos, steps);
-        cache.Set(CacheKey, result, TimeSpan.FromMinutes(2));
+        await cache.SetAsync(CacheKey, result, TimeSpan.FromMinutes(2));
         return result;
     }
 }

@@ -22,6 +22,8 @@ public class MesDbContext(DbContextOptions<MesDbContext> options) : DbContext(op
     public DbSet<RepairRecord> RepairRecords => Set<RepairRecord>();
     public DbSet<ExceptionEvent> Exceptions => Set<ExceptionEvent>();
     public DbSet<AuditLog> AuditLogs => Set<AuditLog>();
+    public DbSet<FileDocument> FileDocuments => Set<FileDocument>();
+    public DbSet<DailyReport> DailyReports => Set<DailyReport>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -150,6 +152,24 @@ public class MesDbContext(DbContextOptions<MesDbContext> options) : DbContext(op
             e.HasIndex(x => x.CreatedAtUtc);
             e.HasIndex(x => new { x.Action, x.CreatedAtUtc });
             e.Property(x => x.Success).HasDefaultValue(true);
+        });
+
+        modelBuilder.Entity<FileDocument>(e =>
+        {
+            e.ToTable("file_document");
+            // 文件检索的主入口：按类别翻页、按机种找图纸/SOP、按 SN 找检验报告
+            e.HasIndex(x => new { x.Category, x.CreatedAtUtc });
+            e.HasIndex(x => x.ProductId);
+            e.HasIndex(x => x.Sn);
+            e.HasOne(x => x.Product).WithMany().HasForeignKey(x => x.ProductId).OnDelete(DeleteBehavior.SetNull);
+            e.HasOne(x => x.WorkOrder).WithMany().HasForeignKey(x => x.WorkOrderId).OnDelete(DeleteBehavior.SetNull);
+        });
+
+        modelBuilder.Entity<DailyReport>(e =>
+        {
+            e.ToTable("daily_report");
+            // 同一条线同一天只生成一份，重复跑（手动补数）覆盖
+            e.HasIndex(x => new { x.ReportDate, x.LineId }).IsUnique();
         });
 
         // 所有 DateTime 统一按 UTC 存储与读取，保证 JSON 输出带 Z，前端不会按本地时区误解析

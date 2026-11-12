@@ -39,12 +39,32 @@ const lastFailDefect = computed(() => {
 })
 const isHold = computed(() => unit.value?.status === 'Hold')
 
+// 队列筛选：工单号 / 机种（不做"点 SN 自动查询"，避免维修员误触把正在看的单子顶掉）
+const filterOrderNo = ref('')
+const filterProduct = ref('')
+const queueLoading = ref(false)
+
 async function loadQueue() {
+  queueLoading.value = true
   try {
-    queue.value = await (await mesApi.repairPending(50)).data
+    queue.value = (
+      await mesApi.repairPending(
+        50,
+        filterOrderNo.value.trim() || undefined,
+        filterProduct.value || undefined,
+      )
+    ).data
   } catch {
     // 队列刷新失败不打断操作
+  } finally {
+    queueLoading.value = false
   }
+}
+
+function resetFilters() {
+  filterOrderNo.value = ''
+  filterProduct.value = ''
+  loadQueue()
 }
 
 async function loadAll() {
@@ -138,11 +158,6 @@ async function reload(sn: string) {
   const { data } = await mesApi.trace(sn)
   unit.value = data
   await loadQueue()
-}
-
-function pickFromQueue(row: RepairPendingRow) {
-  snInput.value = row.sn
-  lookup(row.sn)
 }
 
 function onStationChange() {
@@ -326,12 +341,40 @@ onBeforeUnmount(() => {
             <span class="small muted">隔离中的 SN · 15 秒自动刷新</span>
           </div>
           <div class="card-body">
-            <div v-if="!queue.length" class="empty">当前没有待维修的 SN</div>
-            <table v-else class="table row-click">
+            <div class="queue-filters">
+              <label>
+                <span class="small muted">工单号</span>
+                <input
+                  v-model="filterOrderNo"
+                  class="input"
+                  placeholder="如 WO-2026"
+                  @keyup.enter="loadQueue()"
+                />
+              </label>
+              <label>
+                <span class="small muted">机种</span>
+                <select v-model="filterProduct" class="input" @change="loadQueue()">
+                  <option value="">全部机种</option>
+                  <option v-for="p in boot?.products ?? []" :key="p.id" :value="p.code">
+                    {{ p.code }} · {{ p.name }}
+                  </option>
+                </select>
+              </label>
+              <button class="btn" :disabled="queueLoading" @click="loadQueue()">
+                {{ queueLoading ? '查询中…' : '查询' }}
+              </button>
+              <button class="btn btn-ghost" @click="resetFilters">重置</button>
+            </div>
+
+            <div v-if="!queue.length" class="empty">
+              {{ filterOrderNo || filterProduct ? '该条件下没有待维修的 SN' : '当前没有待维修的 SN' }}
+            </div>
+            <table v-else class="table">
               <thead>
                 <tr>
                   <th>SN</th>
                   <th>工单</th>
+                  <th>机种</th>
                   <th>产线</th>
                   <th>不良工序</th>
                   <th>不良代码</th>
@@ -340,12 +383,13 @@ onBeforeUnmount(() => {
                 </tr>
               </thead>
               <tbody>
-                <tr v-for="row in queue" :key="row.unitId" @click="pickFromQueue(row)">
+                <tr v-for="row in queue" :key="row.unitId">
                   <td class="mono">
                     {{ row.sn }}
                     <span v-if="row.repairing" class="badge badge-warn" style="margin-left: 6px">维修中</span>
                   </td>
                   <td class="mono">{{ row.orderNo }}</td>
+                  <td>{{ row.productName }}</td>
                   <td>{{ row.lineName }}</td>
                   <td>{{ row.currentStepName }}</td>
                   <td>
@@ -428,5 +472,20 @@ onBeforeUnmount(() => {
 
 .row-click tbody tr {
   cursor: pointer;
+}
+
+.queue-filters {
+  display: flex;
+  gap: 10px;
+  align-items: flex-end;
+  flex-wrap: wrap;
+  margin-bottom: 14px;
+}
+
+.queue-filters label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 180px;
 }
 </style>

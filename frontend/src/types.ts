@@ -26,6 +26,83 @@ export interface PagedResult<T> {
   items: T[]
 }
 
+// ---------- APS 排程 ----------
+export interface ApsScheduleRow {
+  orderId: number
+  orderNo: string
+  productName: string
+  lineName: string
+  qty: number
+  status: string
+  bottleneckStep: string
+  bottleneckTaktSeconds: number
+  unitsPerHour: number
+  startLocal: string
+  endLocal: string
+  dueDateLocal: string
+  onTime: boolean
+  loadHours: number
+}
+
+export interface ApsResult {
+  generatedAtLocal: string
+  totalHours: number
+  plannedOrders: number
+  rows: ApsScheduleRow[]
+  bottleneckNotes: string[]
+}
+
+// ---------- 良率分析 ----------
+export interface YieldStepRow {
+  stepName: string
+  passQty: number
+  failQty: number
+  yieldPercent: number
+}
+
+export interface YieldDefectRow {
+  code: string
+  name: string
+  count: number
+  cumulativePercent: number
+}
+
+export interface YieldRow {
+  key: string
+  displayName: string
+  orderStatus: string | null
+  inputQty: number
+  completedQty: number
+  holdQty: number
+  failQty: number
+  yieldPercent: number
+  firstPassYield: number
+  steps: YieldStepRow[]
+  topDefects: YieldDefectRow[]
+}
+
+export interface YieldResult {
+  by: string
+  rows: YieldRow[]
+}
+
+// ---------- 文件（图纸/SOP/检验报告） ----------
+export interface FileDocRow {
+  id: number
+  category: string
+  productId: number | null
+  productName: string | null
+  workOrderId: number | null
+  workOrderNo: string | null
+  sn: string | null
+  fileName: string
+  sizeBytes: number
+  contentType: string
+  remark: string | null
+  uploadedByName: string
+  createdAtUtc: string
+}
+
 export interface User {
   id: number
   userName: string

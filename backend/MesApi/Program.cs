@@ -3,7 +3,12 @@ using System.Threading.RateLimiting;
 using MesApi.Data;
 using MesApi.Hubs;
 using MesApi.Infrastructure;
+using MesApi.Scheduling;
 using MesApi.Services;
+using MesApi.Domain;
+using MesApi.Infrastructure.Messaging;
+using MesApi.Infrastructure.Storage;
+using Quartz;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.Server.Kestrel.Core;
@@ -75,12 +80,29 @@ try
     // 停机时给在途扫码请求留出完成时间，避免正在写库的请求被硬切
     builder.Services.Configure<HostOptions>(o => o.ShutdownTimeout = TimeSpan.FromSeconds(20));
 
-    // 车间接口请求体都很小（扫码报文不到 1KB），限制 1MB 可挡掉异常大包
+    // 车间接口报文都很小，全局 25MB 挡异常大包；文件上传接口单独限 20MB
     builder.Services.Configure<KestrelServerOptions>(o =>
     {
-        o.Limits.MaxRequestBodySize = 1024 * 1024;
+        o.Limits.MaxRequestBodySize = 25 * 1024 * 1024;
         o.AddServerHeader = false; // 不暴露服务器指纹
     });
+
+    // ---------- 平台基础设施（均带降级：没装中间件照样能跑演示） ----------
+    builder.Services.AddSingleton<ICacheService, CacheService>();                 // Redis / 内存
+    builder.Services.AddSingleton<InMemoryMessageBus>();
+    builder.Services.AddSingleton<IMessageBus>(sp =>
+        !string.IsNullOrWhiteSpace(sp.GetRequiredService<IConfiguration>()["RabbitMq:Host"])
+            ? ActivatorUtilities.CreateInstance<RabbitMqMessageBus>(sp)
+            : sp.GetRequiredService<InMemoryMessageBus>());
+    builder.Services.AddSingleton<ScanEventDispatcher>();
+    builder.Services.AddHostedService<MessageBusBootstrap>();
+    builder.Services.AddSingleton<IFileStorage>(sp =>
+        !string.IsNullOrWhiteSpace(sp.GetRequiredService<IConfiguration>()["Minio:Endpoint"])
+            ? ActivatorUtilities.CreateInstance<S3FileStorage>(sp)
+            : ActivatorUtilities.CreateInstance<LocalFileStorage>(sp));
+    builder.Services.AddScoped<IApsService, ApsService>();
+    builder.Services.AddScoped<IYieldAnalysisService, YieldAnalysisService>();
+
     builder.Services.AddScoped<ITokenService, TokenService>();
     builder.Services.AddScoped<IAuthService, AuthService>();
     builder.Services.AddScoped<IProductionService, ProductionService>();
@@ -91,8 +113,29 @@ try
     builder.Services.AddScoped<IExceptionService, ExceptionService>();
     builder.Services.AddSingleton<IBoardNotifier, BoardNotifier>();
 
-    // 后台维护任务：维修超时预警 / 令牌清理 / 审计日志留存
-    builder.Services.AddHostedService<MaintenanceWorker>();
+    // ---------- Quartz 调度：维修超时 / 交期预警 / 夜间报表 / 数据保养 ----------
+    builder.Services.AddQuartz(q =>
+    {
+        q.AddJob<RepairSlaAlertJob>(j => j.WithIdentity(RepairSlaAlertJob.Key).StoreDurably());
+        q.AddTrigger(t => t.ForJob(RepairSlaAlertJob.Key).WithIdentity("repair-sla-trigger")
+            .WithSimpleSchedule(s => s.WithInterval(TimeSpan.FromMinutes(
+                Math.Max(1, builder.Configuration.GetValue("Maintenance:IntervalMinutes", 5)))).RepeatForever())
+            .StartNow());
+
+        q.AddJob<OverdueOrderAlertJob>(j => j.WithIdentity(OverdueOrderAlertJob.Key).StoreDurably());
+        q.AddTrigger(t => t.ForJob(OverdueOrderAlertJob.Key).WithIdentity("overdue-order-trigger")
+            .WithSimpleSchedule(s => s.WithInterval(TimeSpan.FromMinutes(30)).RepeatForever()).StartNow());
+
+        // 夜间报表 02:30（东八区），晨会前出好昨天的数
+        q.AddJob<NightlyReportJob>(j => j.WithIdentity(NightlyReportJob.Key).StoreDurably());
+        q.AddTrigger(t => t.ForJob(NightlyReportJob.Key).WithIdentity("nightly-report-trigger")
+            .WithCronSchedule("0 30 2 * * ?", c => c.InTimeZone(FactoryClock.TimeZone)));
+
+        q.AddJob<HousekeepingJob>(j => j.WithIdentity(HousekeepingJob.Key).StoreDurably());
+        q.AddTrigger(t => t.ForJob(HousekeepingJob.Key).WithIdentity("housekeeping-trigger")
+            .WithCronSchedule("0 30 3 * * ?", c => c.InTimeZone(FactoryClock.TimeZone)));
+    });
+    builder.Services.AddQuartzHostedService(o => o.WaitForJobsToComplete = true);
 
     // 健康检查：/health/live 与 /health/ready
     builder.Services.AddMesHealthChecks();

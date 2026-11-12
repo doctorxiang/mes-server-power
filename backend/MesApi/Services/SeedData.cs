@@ -54,7 +54,8 @@ public static class SeedData
             Name = s.Name,
             Kind = s.Kind,
             RequireDefect = s.RequireDefect,
-            IsKey = s.IsKey
+            IsKey = s.IsKey,
+            TaktSeconds = s.Seconds
         }).ToList();
         db.Steps.AddRange(steps);
 

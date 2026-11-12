@@ -29,6 +29,7 @@ const navGroups = computed(() => [
       { to: '/scan', label: '扫码报工', icon: 'scan' },
       { to: '/work-orders', label: '工单管理', icon: 'orders' },
       { to: '/dashboard', label: '车间看板', icon: 'board' },
+      ...(auth.role !== 'Operator' ? [{ to: '/aps', label: 'APS 排程', icon: 'aps' }] : []),
     ],
   },
   {
@@ -36,12 +37,14 @@ const navGroups = computed(() => [
     items: [
       { to: '/trace', label: 'SN 追溯', icon: 'trace' },
       ...(auth.canHandleQuality ? [{ to: '/repair', label: '维修站', icon: 'trace' }] : []),
+      { to: '/analysis', label: '良率分析', icon: 'analysis' },
     ],
   },
   {
     label: '系统',
     items: [
       { to: '/master', label: '主数据', icon: 'master' },
+      { to: '/files', label: '工艺文件', icon: 'files' },
       ...(auth.isAdmin
         ? [
             { to: '/users', label: '账号管理', icon: 'users' },
@@ -95,6 +98,18 @@ async function logout() {
                 <path d="M4 6c0-1.7 3.6-3 8-3s8 1.3 8 3-3.6 3-8 3-8-1.3-8-3Z" />
                 <path d="M4 6v6c0 1.7 3.6 3 8 3s8-1.3 8-3V6" />
                 <path d="M4 12v6c0 1.7 3.6 3 8 3s8-1.3 8-3v-6" />
+              </template>
+              <template v-else-if="item.icon === 'aps'">
+                <rect x="3" y="5" width="18" height="16" rx="2" />
+                <path d="M3 10h18M8 3v4M16 3v4" />
+                <path d="M7 14h4M7 17h7" />
+              </template>
+              <template v-else-if="item.icon === 'analysis'">
+                <path d="M4 20V10M10 20V4M16 20v-7M22 20H2" />
+              </template>
+              <template v-else-if="item.icon === 'files'">
+                <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7Z" />
+                <path d="M3 11h18" />
               </template>
               <template v-else-if="item.icon === 'audit'">
                 <path d="M7 3h7l4 4v13a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1Z" />
