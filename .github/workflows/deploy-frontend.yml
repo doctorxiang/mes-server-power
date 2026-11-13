@@ -31,14 +31,14 @@ jobs:
           cache: npm
           cache-dependency-path: frontend/package-lock.json
 
-      - name: 安装依赖并构建（--base=./ 让资源用相对路径，适配 Pages 子路径）
+      - name: 安装依赖并构建（base 用仓库名，路由与资源都在项目子路径下）
         working-directory: frontend
         env:
           # 后端地址，仓库 Settings → Variables 里配置；未配置时走同源 /api
           VITE_API_BASE: ${{ vars.VITE_API_BASE }}
         run: |
           npm ci
-          npm run build -- --base=./
+          npm run build -- --base=/${GITHUB_REPOSITORY#*/}/
 
       # SPA 兜底：Pages 没有 rewrite 规则，把 index.html 复制成 404.html，
       # 直接访问 /work-orders 这类深链接时由 404 页接管回 index.html
