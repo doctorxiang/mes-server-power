@@ -25,17 +25,21 @@ docker compose up -d          # mysql + redis + rabbitmq + minio + adminer
 | 组件 | 地址 | 账号 |
 |---|---|---|
 | Redis | `localhost:6379` | 无密码 |
-| RabbitMQ 管理台 | http://localhost:15672 | mes / ${MES_DB_PASSWORD} |
-| MinIO 控制台 | http://localhost:9001 | mes / ${MINIO_ROOT_PASSWORD} |
-| MySQL | `localhost:3306` | mes / ${MES_DB_PASSWORD}（库 mes_server_power） |
+| RabbitMQ 管理台 | http://localhost:15672 | mes / 见 `.env` 的 `RABBITMQ_PASSWORD` |
+| MinIO 控制台 | http://localhost:9001 | mes / 见 `.env` 的 `MINIO_ROOT_PASSWORD` |
+| MySQL | `localhost:3306` | mes / 见 `.env` 的 `MES_DB_PASSWORD`（库 mes_server_power） |
+
+> 密钥不进仓库：首次部署先把 `.env.example` 复制成 `.env` 并改成你自己的密码，
+> `docker compose up` 会自动读取。后端走 MySQL 模式时，连接串密码要与 `MES_DB_PASSWORD` 一致
+> （改 `appsettings.json`，或用环境变量 `ConnectionStrings__MySql` 覆盖）。
 
 后端**按配置自动启用**，没配就走降级实现，所以不装 Docker 也能演示：
 
 ```jsonc
-// appsettings.json
+// appsettings.json（密码填你 .env 里设置的值）
 "Redis":    { "ConnectionString": "localhost:6379" },
 "RabbitMq": { "Host": "localhost" },
-"Minio":    { "Endpoint": "http://localhost:9000", "AccessKey": "mes", "SecretKey": "${MINIO_ROOT_PASSWORD}" }
+"Minio":    { "Endpoint": "http://localhost:9000", "AccessKey": "mes", "SecretKey": "<你的 MINIO_ROOT_PASSWORD>" }
 ```
 
 启动后打开 **`GET /health/ready`**，`infra` 字段会告诉你实际生效的是哪套：

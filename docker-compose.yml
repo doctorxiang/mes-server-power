@@ -4,10 +4,11 @@ services:
     container_name: mes-mysql
     restart: unless-stopped
     environment:
-      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      # 真实口令放在同目录 .env（不入库），模板见 .env.example
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?请在 .env 里设置 MYSQL_ROOT_PASSWORD}
       MYSQL_DATABASE: mes_server_power
       MYSQL_USER: mes
-      MYSQL_PASSWORD: ${MES_DB_PASSWORD}
+      MYSQL_PASSWORD: ${MES_DB_PASSWORD:?请在 .env 里设置 MES_DB_PASSWORD}
       TZ: Asia/Shanghai
     command:
       - --character-set-server=utf8mb4
@@ -48,7 +49,7 @@ services:
     restart: unless-stopped
     environment:
       RABBITMQ_DEFAULT_USER: mes
-      RABBITMQ_DEFAULT_PASS: ${MES_DB_PASSWORD}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:?请在 .env 里设置 RABBITMQ_PASSWORD}
       RABBITMQ_DEFAULT_VHOST: /
     ports:
       - "5672:5672"
@@ -61,7 +62,7 @@ services:
       timeout: 10s
       retries: 5
 
-  # 对象存储：图纸/SOP/检验报告。控制台 http://localhost:9001（mes / ${MINIO_ROOT_PASSWORD}）
+  # 对象存储：图纸/SOP/检验报告。控制台 http://localhost:9001（账号密码见 .env）
   minio:
     image: minio/minio:latest
     container_name: mes-minio
@@ -69,7 +70,7 @@ services:
     command: ["server", "/data", "--console-address", ":9001"]
     environment:
       MINIO_ROOT_USER: mes
-      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?请在 .env 里设置 MINIO_ROOT_PASSWORD}
     ports:
       - "9000:9000"
       - "9001:9001"
