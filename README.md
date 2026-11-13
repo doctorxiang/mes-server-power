@@ -36,6 +36,8 @@ cd frontend && npm install && npm run dev   # http://localhost:5173
 
 ## 演示账号
 
+https://doctorxiang.github.io/mes-server-power/
+
 | 账号 | 密码 | 角色 |
 |---|---|---|
 | admin | Admin@12345 | 系统管理员 |
