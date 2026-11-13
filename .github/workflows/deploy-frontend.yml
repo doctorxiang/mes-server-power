@@ -33,6 +33,9 @@ jobs:
 
       - name: 安装依赖并构建（--base=./ 让资源用相对路径，适配 Pages 子路径）
         working-directory: frontend
+        env:
+          # 后端地址，仓库 Settings → Variables 里配置；未配置时走同源 /api
+          VITE_API_BASE: ${{ vars.VITE_API_BASE }}
         run: |
           npm ci
           npm run build -- --base=./

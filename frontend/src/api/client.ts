@@ -2,8 +2,12 @@ import axios, { AxiosError, type InternalAxiosRequestConfig } from 'axios'
 import type { AuthResponse, ProblemDetails } from '@/types'
 import { clearSession, notifySessionChanged, persistSession, readSession } from './session'
 
+// 后端根地址：默认同源（本地由 Vite 代理 /api，生产由后端托管前端）。
+// 前端单独部署（如 GitHub Pages）时，构建时用 VITE_API_BASE 指向后端地址。
+export const API_ORIGIN = (import.meta.env.VITE_API_BASE ?? '').replace(/\/+$/, '')
+
 export const api = axios.create({
-  baseURL: '/api',
+  baseURL: `${API_ORIGIN}/api`,
   timeout: 15000,
 })
 

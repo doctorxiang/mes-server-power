@@ -2,7 +2,7 @@
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import * as signalR from '@microsoft/signalr'
 import { mesApi } from '@/api/mes'
-import { parseApiError } from '@/api/client'
+import { parseApiError, API_ORIGIN } from '@/api/client'
 import { useAuthStore } from '@/stores/auth'
 import { readSession } from '@/api/session'
 import type { Dashboard, ExceptionRow, MasterBootstrap, RecentLog } from '@/types'
@@ -77,7 +77,7 @@ async function loadExtras() {
 async function connectHub() {
   try {
     hub = new signalR.HubConnectionBuilder()
-      .withUrl('/hubs/board', { accessTokenFactory: () => readSession().accessToken })
+      .withUrl(`${API_ORIGIN}/hubs/board`, { accessTokenFactory: () => readSession().accessToken })
       .withAutomaticReconnect([0, 2000, 5000, 10000])
       .configureLogging(signalR.LogLevel.None)
       .build()
