@@ -37,8 +37,7 @@ public class WorkOrder
     public int PlanQty { get; set; }
 
     /// <summary>
-    /// 累计发料套数 = 计划 + 补料（不预置冗余，报废一台补一台）。
-    /// 产线只能在这里面投产，用完了必须补料 —— 所以它是扫码建 SN 的硬上限。
+    /// 累计发料套数 = 计划 + 补料。发料是扫码建 SN 的上限，用完须补料。
     /// </summary>
     public int IssuedQty { get; set; }
 

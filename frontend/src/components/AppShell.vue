@@ -42,7 +42,7 @@ function closeOtherTabs() {
   tabs.closeOthers()
 }
 
-/* 面包屑：从导航结构反推（工单管理 > 工单报告），比在路由里手写 meta 不容易漂 */
+/* 面包屑：从导航结构反推（工单管理 > 工单报告），不重复维护路由 meta */
 const breadcrumb = computed(() => {
   for (const group of navGroups.value) {
     for (const item of group.items) {
@@ -126,7 +126,7 @@ const navGroups = computed<{ label: string; items: NavItem[] }[]>(() => [
         to: '/work-orders',
         label: '工单管理',
         icon: 'orders',
-        // 工单报告（原良率分析）收进工单管理做子菜单：单子的进度和良率本来就该一起看
+        // 工单报告（原良率分析）作为工单管理的子菜单
         children: [
           { to: '/work-orders', label: '工单列表' },
           { to: '/work-orders/report', label: '工单报告' },
@@ -177,7 +177,7 @@ function openBranch(item: NavItem) {
 }
 
 function toggleBranch(item: NavItem) {
-  // 图标条模式下点分组 = 先把侧边栏展开，再保证这个分组是开的（否则点了像没反应）
+  // 图标条模式下点分组：先展开侧边栏，再展开该分组
   if (sidebarMode.value !== 'full') {
     setMode('full')
     openBranch(item)
@@ -217,7 +217,7 @@ function onKeydown(e: KeyboardEvent) {
 }
 
 onMounted(() => {
-  // 时钟要跟秒走：1 秒一跳，别用 20 秒（秒数会停在旧值上像卡住）
+  // 时钟每秒刷新
   timer = window.setInterval(() => (now.value = new Date()), 1000)
   window.addEventListener('keydown', onKeydown)
 })

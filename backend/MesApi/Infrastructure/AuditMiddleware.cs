@@ -9,8 +9,7 @@ namespace MesApi.Infrastructure;
 
 /// <summary>
 /// 审计中间件：对所有写操作（POST/PUT/DELETE/PATCH）落一条 audit_log。
-/// 高频接口（默认 /api/production/scan）走排除名单——它们的每一次动作本身已在 sn_move_log 里，
-/// 再记一份只会让写入量翻倍，车间高峰扛不住。
+/// 高频接口（默认 /api/production/scan）在排除名单中，其动作已记录在 sn_move_log。
 /// 关键点：审计写在 finally 里，业务抛异常（4xx/5xx）时同样要留痕。
 /// </summary>
 public partial class AuditMiddleware(RequestDelegate next, IServiceScopeFactory scopeFactory, IConfiguration config, ILogger<AuditMiddleware> logger)

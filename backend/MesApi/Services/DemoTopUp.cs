@@ -30,21 +30,18 @@ internal enum UnitFate
 }
 
 /// <summary>
-/// 演示数据生成器 —— 按"真实工单的物料闭环"造数，不是随便凑数字：
+/// 演示数据生成器，按真实工单的物料闭环造数：
 ///
-///   计划 120 台（客户要的良品数）
-///   → 发料 120 套（<b>不预置冗余</b>，计划多少发多少）
-///   → 上线 121 台（其中 1 台测试判不良、维修站判不可修 → 报废）
-///   → 报废 1 台后补料 1 套，再上线 1 台 → 完工 120 台（正好等于计划，进度 100%）
+///   计划 120 台 → 发料 120 套 → 上线 121 台（1 台测试不良判报废）
+///   → 补料 1 套再上线 1 台 → 完工 120 台（进度 100%）
 ///
-/// 报废率按千分之七控制：一单几百台只报废一两台。
-/// 不良按工序分层，这也是现场的真实逻辑：
-///   目视检查 / ICT —— 虚焊、连锡、缺件、极性反这类，补焊/换件就能救回，<b>不可能报废</b>
-///   老化 / 耐压 / 功能测试 —— 才有报废可能（功率器件击穿、变压器绝缘失效），且必须是电气不良
+/// 报废率按千分之七控制。不良按工序分层：
+///   目视检查 / ICT：虚焊、连锡、缺件、极性反，只能返修不能报废
+///   老化 / 耐压 / 功能测试：才有报废可能，且必须是电气不良
 ///
 /// 两种入口：
-///   RunAsync(reset: true)  → 清空生产数据重建一套（--reset-demo / POST /api/demo/reset）
-///   RunAsync(reset: false) → 幂等补齐（已存在的单号跳过，--topup-demo / POST /api/demo/topup）
+///   RunAsync(reset: true)  → 清空生产数据重建（--reset-demo / POST /api/demo/reset）
+///   RunAsync(reset: false) → 幂等补齐，已存在的单号跳过（--topup-demo / POST /api/demo/topup）
 /// </summary>
 public static class DemoTopUp
 {
@@ -110,7 +107,7 @@ public static class DemoTopUp
     /// <summary>
     /// 每张已完工工单抽 2-4 台成品入库前抽检：以包装/外观为主，少量功能/安规，
     /// 不良率控制在 3% 左右（成品端抽检不合格比产线测试少得多）。
-    /// 幂等：库里已有抽检记录就整体跳过 —— 抽检是证据，不能重复补造。
+    /// 幂等：库里已有抽检记录就整体跳过。
     /// </summary>
     private static async Task<int> AddQcSamplesAsync(MesDbContext db, Random rnd, CancellationToken ct)
     {

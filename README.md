@@ -1,72 +1,40 @@
 # 服务器电源 MES（网页版 · MVP）
 
-面向**服务器电源制造**的简化 MES：从**插件 → 过锡炉 → 补焊剪脚 → 目视检查 → ICT → 老化 → 耐压 → 功能测试 → 包装**九道工序的全流程扫码过站、不良隔离与返修、SN 级追溯、实时车间看板。
+面向服务器电源制造的简化 MES，覆盖**插件 → 过锡炉 → 补焊剪脚 → 目视检查 → ICT → 老化 → 耐压 → 功能测试 → 包装**九道工序的扫码过站、不良返修、SN 追溯与车间看板。
 
-技术栈：**Vue 3 + TypeScript + Vite + Pinia** ／ **ASP.NET Core (.NET 10) + EF Core 9** ／ **MySQL 8.4**（开发可用 SQLite）／ **Redis** 缓存 ／ **RabbitMQ** 事件总线 ／ **MinIO** 对象存储 ／ **Quartz.NET** 调度 ／ **SignalR** 实时推送。
-
----
+技术栈：Vue 3 + TypeScript + Pinia ｜ ASP.NET Core (.NET 10) + EF Core ｜ MySQL 8.4（开发可用 SQLite）｜ Redis / RabbitMQ / MinIO / Quartz.NET / SignalR（均为可选组件，未配置时自动降级）。
 
 ## 快速启动
 
 ```powershell
-# 方式一：SQLite 演示模式（无需安装 MySQL，适合体验）
-.\start-dev.ps1
-
-# 方式二：完整 MySQL（需要 Docker）
-.\start-dev.ps1 -WithMysql
+.\start-dev.ps1              # SQLite 演示模式，无需 MySQL
+.\start-dev.ps1 -WithMysql   # 完整 MySQL（需要 Docker）
 ```
 
-### 中间件（Redis / RabbitMQ / MinIO）
+中间件单独起：
 
 ```bash
-docker compose up -d          # mysql + redis + rabbitmq + minio + adminer
+docker compose up -d         # mysql + redis + rabbitmq + minio + adminer
 ```
 
-| 组件 | 地址 | 账号 |
-|---|---|---|
-| Redis | `localhost:6379` | 无密码 |
-| RabbitMQ 管理台 | http://localhost:15672 | mes / 见 `.env` 的 `RABBITMQ_PASSWORD` |
-| MinIO 控制台 | http://localhost:9001 | mes / 见 `.env` 的 `MINIO_ROOT_PASSWORD` |
-| MySQL | `localhost:3306` | mes / 见 `.env` 的 `MES_DB_PASSWORD`（库 mes_server_power） |
-
-> 密钥不进仓库：首次部署先把 `.env.example` 复制成 `.env` 并改成你自己的密码，
-> `docker compose up` 会自动读取。后端走 MySQL 模式时，连接串密码要与 `MES_DB_PASSWORD` 一致
-> （改 `appsettings.json`，或用环境变量 `ConnectionStrings__MySql` 覆盖）。
-
-后端**按配置自动启用**，没配就走降级实现，所以不装 Docker 也能演示：
-
-```jsonc
-// appsettings.json（密码填你 .env 里设置的值）
-"Redis":    { "ConnectionString": "localhost:6379" },
-"RabbitMq": { "Host": "localhost" },
-"Minio":    { "Endpoint": "http://localhost:9000", "AccessKey": "mes", "SecretKey": "<你的 MINIO_ROOT_PASSWORD>" }
-```
-
-启动后打开 **`GET /health/ready`**，`infra` 字段会告诉你实际生效的是哪套：
-
-```json
-"infra": { "cache": "redis", "messaging": "rabbitmq", "storage": "s3/minio", "scheduler": "quartz" }
-```
-
-若显示 `memory / in-memory / local-disk`，说明中间件没连上——看日志里的 `Redis 连接失败` / `RabbitMQ 连接失败` 警告。
+首次部署先把 `.env.example` 复制为 `.env` 并改成自己的密码，`docker compose` 会自动读取。后端连接串密码需与 `.env` 的 `MES_DB_PASSWORD` 一致（改 `appsettings.json`，或用环境变量 `ConnectionStrings__MySql` 覆盖）。
 
 手动启动：
 
 ```bash
-# 后端（默认 MySQL；本机无 MySQL 时用 SQLite 演示）
+# 后端（Production 走 MySQL 并执行迁移，Development 走 SQLite）
 cd backend/MesApi
-ASPNETCORE_ENVIRONMENT=Development dotnet run --urls http://localhost:5080   # SQLite
-ASPNETCORE_ENVIRONMENT=Production  dotnet run --urls http://localhost:5080   # MySQL（先 docker compose up -d）
+dotnet run --urls http://localhost:5080
 
 # 前端
-cd frontend && npm install && npm run dev   # → http://localhost:5173
+cd frontend && npm install && npm run dev   # http://localhost:5173
 ```
 
-> SQLite 演示模式用 `EnsureCreated` 建表，**不会给已有的 mes.db 补新表**。从旧版本升级时先删掉 `backend/MesApi/mes.db`（演示数据会重新初始化）；MySQL 模式走正式迁移，无需手工干预。
+中间件没配置时后端自动走降级实现（进程内缓存、内存消息、本地磁盘），不影响演示。实际生效情况看 `GET /health/ready` 返回的 `infra` 字段。
 
-**运维接口**：`/health/live`、`/health/ready`（探活）、`/docs`（内网接口文档）、`/audit`（界面里的操作审计，仅管理员）。
+注意：SQLite 模式用 `EnsureCreated` 建表，升级后不会给旧 `mes.db` 补新表，需删掉重建；MySQL 模式走正式迁移，无此问题。
 
-**演示账号**（首次启动自动初始化主数据与演示生产数据）：
+## 演示账号
 
 | 账号 | 密码 | 角色 |
 |---|---|---|
@@ -76,307 +44,116 @@ cd frontend && npm install && npm run dev   # → http://localhost:5173
 | operator1 | Operator@123 | 操作工 |
 | qc1 | Qc@12345678 | 质检员 |
 
-## 演示数据（可热更新）
+## 演示数据
 
-演示库初始化后只有 3 张在制单、约 280 台 SN，良率分析看着很单薄。`Services/DemoTopUp.cs` 按**真实工单的物料闭环**把数据补到"像真跑过一个月"：
-
-| 内容 | 数量 |
-|---|---|
-| 工单 | 15 张（3 张在制 + 12 张已完工） |
-| 已完工工单 | 12 张（过去 12 天，每天 1 张，白班/夜班交替，两条线三个机种轮转） |
-| SN | 2 368 台，每台最多 9 道工序完整流水 |
-| 过站流水 | 约 2.15 万条 |
-| 维修记录 | 353 条（返修救回 + 卡在维修站的隔离品 + 报废判定） |
-| 良品率 | **98.4%**（2 329 完工 ÷ 2 368 投入） |
-| 直通率 FPY | **84.6%**（一次没判不良就完工；差出来的点数是返修救回的） |
-| 报废 | **20 台 / 0.84%**，每张单 0~2 台 |
-| 待补料 | 1 张单缺 1 套（演示"报废一台补一台"的闭环） |
-
-两种触发方式，**都不用重启、不用重建库、不用跑迁移**：
+首次启动自动初始化主数据、3 张在制工单和约 280 台 SN。需要更丰满的数据时可以补数（15 张工单 / 2368 台 SN / 2.15 万条流水，良品率 98.4%、直通率 84.6%），支持热更新，不用重启：
 
 ```bash
-# ① 幂等补齐：已有的单号跳过，只补缺的部分（服务可以关着）
-dotnet run -- --topup-demo
-
-# ② 清空重建：删掉工单/SN/流水/维修/异常/日报后按新口径重建（主数据与账号不动）
-dotnet run -- --reset-demo
-
-# ③ HTTP 方式（服务在跑，直接改运行中的库）
+dotnet run -- --topup-demo          # 幂等补齐，已有的单号跳过
+dotnet run -- --reset-demo          # 清空生产数据后按新口径重建
 curl -X POST http://localhost:5080/api/demo/topup -H "Authorization: Bearer <admin token>"
-curl -X POST http://localhost:5080/api/demo/reset -H "Authorization: Bearer <admin token>"
 ```
 
-安全阀：`Demo:AllowTopUp=false` 或非 Admin 调用，接口直接 404/403。
+安全阀：`Demo:AllowTopUp=false` 或非 Admin 调用时接口直接拒绝。
 
-### 工单的物料闭环：发料 = 计划，报废一台补一台
+## 业务口径
 
-上一版按"发料 = 计划 ÷ 目标直通率"预置了 15% 冗余料，一单 120 台要发 141 套，
-多出来的 21 套最后全被当成报废吃掉 —— 库存虚高、在制数量虚高，跟现场对不上。
-服务器电源这种产品的报废率只有千分之几，一单几百台也就报废一两台，所以现在改成"发多少用多少、报废了再补"：
+工单按「发料 = 计划」执行，不预置冗余料；报废后走补料追加发料。
 
-```
-计划 160 台（客户要的良品数，不是要投多少料）
-  → 发料 160 套（计划多少发多少，不预置冗余）
-  → 上线 162 台（其中 2 台在老化/功能测试判不良，维修站判定不可修 → 报废）
-  → 报废 2 台后补料 2 套，再上线 2 台
-  → 完工 160 台（= 计划 → 进度 100%，工单自动 Completed）
-```
+- `PlanQty` 是计划良品数，完工进度 = 完工 ÷ 计划，到 100% 工单自动 Completed
+- 发料是扫码建 SN 的硬上限，用尽后返回 409，须补料后才能继续上线
+- 报废即补料：缺口 = 报废数 − (发料 − 计划)，工单详情页提示补料
+- 直通率 FPY = 一次未判不良就完工 ÷ 投入，与良品率（完工 ÷ 投入）口径不同，报表中分开列示
 
-| 字段 | 含义 | 谁在写 |
-|---|---|---|
-| `work_order.PlanQty` | 计划**良品**数，完工要达到它 | 建单时填 |
-| `work_order.IssuedQty` | 累计发料 = 计划 + 补料 | 建单 = 计划（`MaterialPlanning.IssuedFor`）、补料接口追加 |
-| `serial_unit` 计数 | 投入（已上线台数） | 首站扫码建 SN |
-| `serial_unit.Status=Completed` 计数 | 完工 | 末站 Pass |
-| `serial_unit.Status=Scrapped` 计数 | 报废 | 维修站判定不可修 |
+维修站：不良 SN 隔离后进站维修，修复出站放回原判不良工序重测；重复维修超 2 次需管理员授权放行，否则只能报废。
 
-四条规则落在代码里：
+QC 抽检针对已包装成品，不合格不报废不隔离，按现场做法加严抽检并回溯同批。
 
-1. **完工进度 = 完工 ÷ 计划**，到 100% 工单自动 Completed，不再出现"计划 300、完工 255、进度 85%"这种看着像欠产的假象。
-2. **发料是扫码的硬上限**：`started >= IssuedQty` 时再扫新 SN 直接 409 —— `工单 WOx 物料已用尽（发料 160 套 / 已上线 160 台），请先补料再上线`。
-3. **报废即补料**：`ReplenishQty = max(0, 报废数 − (发料 − 计划))`，>0 时工单列表亮红、详情页出现"补料（缺 N）"按钮，补完 `IssuedQty` 变大、缺口归零。
-4. **不良按工序分层**（这一版新增，也是最容易被造假数据搞错的地方）：
-   - 目视检查 / ICT：虚焊、连锡、锡珠、漏焊、缺件、错件、极性反 —— **只能返修，绝不可能报废**（补焊、换件就好了）
-   - 老化 / 耐压 / 功能测试：无输出、输出电压超差、老化掉电、纹波超标、耐压不良 —— 才有报废可能（功率器件击穿、变压器绝缘失效），且必须是电气不良
-   - 实现位置：`DemoTopUp.BuildFailSteps()` 给每道工序配了独立的不良代码池和报废概率（`ScrapShare`，目视/ICT = 0），`PickFailPoint()` 只在 `ScrapShare > 0` 的工序里挑报废点
-
-> 口径提醒：**直通率 FPY 85% ≠ 良品率 85%**。直通率 = 一次没判不良就完工 ÷ 投入（返修救回的不算），良品率 = 完工 ÷ 投入。这一版把报废压到 0.84% 之后，良品率 98.4%，直通率还是 85% —— 中间那 14 个点全是返修救回来的，这才是真实产线的形状：报废很少，但一次做对的并不算多。
-
-## 功能清单
+## 功能模块
 
 | 模块 | 说明 |
 |---|---|
-| 扫码报工 | 扫码枪键盘输入回车即提交；首站扫码自动建 SN；工位记忆在本地；Enter 合格 / F2 不良；蜂鸣提示 |
-| 工序流转 | 严格按工艺路线推进：**跳站拦截、混单拦截、隔离品拦截**；完工自动判定工单完成 |
-| 不良处理 | 不良必选不良代码（17 个内置：虚焊/连锡/锡珠/极性反/耐压不良/老化掉电…）；隔离后进**维修站**闭环 |
-| 维修站 | 不良 SN 进出站管理：进站确认维修（措施/不良代码/备注）→ 修复出站**放回原判不良工序重测**；重复维修自动计数，**超过 2 次需管理员授权**否则只能报废；维修履历进追溯时间线；待维修队列与维修记录都支持**日期 / 产线 / 工序 / 不良代码 / 工单号**组合查询（复盘某工序某不良修了多少台） |
-| 工单管理 | 建单即下发（发料 = 计划，不预置冗余）；进度条（完工 ÷ 计划）、计划/发料/投入/完工四个数、9 道工序 WIP 分布、SN 列表、补料、关单/重开；**报废数与报废明细（SN/工序/不良/时间）在详情页看**；支持**产线 / 计划开工日期 / 关键字**查询；列表与详情都有**返修台数 / 返修次数**（台数按 SN 去重、次数含重复维修） |
-| SN 追溯 | 完整工序履历：每站结果、操作人、工位、时间、循环时长、不良代码 |
-| 车间看板 | 深色大屏：6 项 KPI、小时产出、WIP 分布、TOP 不良、产线对比、实时过站流、现场异常 |
-| 实时推送 | SignalR `/hubs/board`，扫码事件毫秒级推到看板；断线自动重连 + 8 秒轮询兜底 |
-| 现场异常 | 缺料/设备/品质异常上报与闭环处理 |
-| 账号权限 | 6 种角色（管理员/计划员/班组长/操作工/质检/只读），路由与接口双重校验 |
-| APS 排程 | 有限产能正排：按瓶颈工序节拍 + 良率折损算时产能，给出每单开工/完工与能否按期交付，甘特图展示 |
-| 工单报告 | 原良率分析，收进**工单管理子菜单**（`/work-orders/report`，旧 `/analysis` 自动跳转）：按工单 / 机种看投入、完工、隔离、不良次数、良品率（完工÷投入）、直通率 FPY（一次通过）、工序良率、不良柏拉图；支持**机种与工单号下钻** |
-| QC 抽检 | 针对**已包装成品**（末道包装工序完工）的出货前抽样检验：按批抽检录入（包装/外观/功能/安规），不合格必记不良代码；不报废不隔离（现场做法是加严抽检 + 回溯同批）；台账按日期 / 产线 / 机种 / 工单 / 判定检索，含抽检合格率与待抽检候选清单，SN 可一键跳转完整追溯 |
-| 物料与补料 | 发料 = 计划；发料用尽拦截上线（409）；报废一台补一台，缺口自动提示，班组长/计划员可追加发料 |
-| 工艺文件 | 图纸 / SOP / 检验报告上传归档（MinIO 或本地磁盘），按分类、机种、SN 检索下载 |
-| 任务调度 | Quartz.NET：维修超时预警（5min）、交期预警（30min）、夜间报表（02:30）、数据保养（03:30），支持手动补跑 |
-| 操作审计 | 所有写操作留痕（谁/何时/哪台终端/成功与否/失败原因），密码类字段自动脱敏，管理员可按人、动作、时间检索 |
-| 可观测性 | `/health/live` 与 `/health/ready` 探活；每请求一行结构化日志 + 慢请求告警；`X-Request-Id` 全链路串联 |
-
-## 为 200 终端并发做的设计
-
-- **幂等过站**：每笔扫码带 `clientKey`（终端 UUID），唯一索引兜底，断网重试不重复计数
-- **乐观并发**：SN 行版本号，两工位同时扫同一 SN 只有一个成功，返回明确提示
-- **索引化聚合**：看板全部按 `production_date`（东八区生产日期字符串）+ 步骤分组，免时区函数、免全表扫描
-- **主数据缓存**：工艺路线/工位进程内缓存 2 分钟，终端启动集中拉取不打爆库
-- **限流**：登录按 IP 20 次/分；扫码按用户 600 次/分（约每终端 3 秒一笔的余量）
-- MySQL 连接 `EnableRetryOnFailure`；估算单实例可承载 200 终端（~10 QPS 过站），更大规模加 Redis 缓存 + SignalR Redis backplane 即可横向扩展
-
-## 平台组件：为什么这么接
-
-### Redis（缓存）
-
-| 缓存内容 | Key | TTL | 目的 |
-|---|---|---|---|
-| 主数据引导包（产线/工位/机型路线/不良代码） | `master:bootstrap` | 2 分钟 | 200 台终端开机集中拉取时不打爆数据库 |
-| 健康探针 | `health:probe` | 10 秒 | 探活时确认 Redis 真的可用 |
-
-- 实现类 `CacheService`：**懒连接 + 失败降级**。Redis 未配置或挂了 → 自动用进程内 `MemoryCache`，30 秒后重试，业务无感
-- 为什么不用 `IMemoryCache` 一把梭：单机够用，但**多实例部署时每台各缓一份、主数据改了不同步**；Redis 天然共享
-
-### RabbitMQ（事件总线）
-
-```
-扫码过站(写库成功) → Publish product.scanned → RabbitMQ(topic) → 消费者 → SignalR 推看板
-                                    ↓ 未配置/连不上
-                              进程内直投（同一份订阅逻辑）
-```
-
-- 关键点：**过站主流程不因为看板而变慢**。看板有 20 个浏览器连着、某个 WebSocket 卡住，也不会拖住扫码事务
-- 可靠性：exchange/queue 都 `durable`，消息 `Persistent`；消费者手动 `ack`，反序列化失败也 ack（避免毒消息无限重投）
-- 降级：`RabbitMqMessageBus` 发布失败时直接调进程内总线，**宁可慢一点，不让看板断流**
-
-### MinIO（对象存储）
-
-- 存：图纸（Drawing）、SOP、检验报告（InspectionReport）、现场照片（Photo）
-- 不存数据库原因：图片/PDF 进 `longblob` 会让 MySQL 备份膨胀、查询变慢、主从同步吃力
-- 对象键规则：`{category}/{yyyyMM}/{uuid}{ext}` —— 天然分目录、防同名覆盖、便于按生命周期清理
-- MinIO 就是 S3 协议，代码用 `AWSSDK.S3` + `ForcePathStyle=true`；将来换阿里云 OSS / AWS S3 只改 Endpoint
-- 降级：未配置时写本地 `files/` 目录，**路径经过规范化校验防目录穿越**
-
-### Quartz.NET（调度）
-
-| 任务 | 频率 | 做什么 |
-|---|---|---|
-| `RepairSlaAlert` | 每 5 分钟 | 维修在站超 4h → 推看板告警（同一单只推一次） |
-| `OverdueOrderAlert` | 每 30 分钟 | 24h 内到期且未完成的工单 → 推告警 |
-| `NightlyReport` | 每天 02:30（东八区） | 聚合昨日产量/良率/TOP 不良 → `daily_report` |
-| `Housekeeping` | 每天 03:30 | 清理过期 refresh token、超 90 天审计日志 |
-
-**关于 XXL-Job**：XXL-Job 的调度中心是 Java 应用（`xxl-job-admin`），.NET 侧没有官方执行器，社区库多年不维护，接进来等于给自己加一个必须运维的 Java 服务。对比之下 Quartz.NET 是 .NET 生态事实标准，能力对得上：
-
-| 需求 | XXL-Job | Quartz.NET |
-|---|---|---|
-| Cron / 固定间隔 | ✅ | ✅ |
-| 失败重试、并发禁止 | ✅ | ✅ `[DisallowConcurrentExecution]` |
-| 集群不重复执行 | 调度中心分发 | `AdoJobStore` + `Clustered=true`（换存储即可，代码不变） |
-| 可视化任务管理 | ✅ 自带 | 本项目 `/api/jobs` + 日志，够用 |
-| .NET 集成成本 | 高（跨语言、额外服务） | 零（同进程 NuGet） |
-
-当前用 `RAMJobStore`（单实例）；要上多实例集群，把存储换成 `AdoJobStore` 并加 `quartz.tables_prefix` 建表即可，Job 代码一行不用改。
+| 扫码报工 | 扫码枪即插即用（USB 键盘模式）；Enter 合格 / F2 不良；首站扫码自动建 SN |
+| 工序流转 | 按工艺路线推进，跳站、混单、隔离品均有拦截 |
+| 维修站 | 进出站管理、返修次数计数与超限授权、维修履历进追溯 |
+| 工单管理 | 建单下发、进度与补料、关单重开、按产线/日期/关键字查询、工单报告 |
+| SN 追溯 | 完整工序履历：每站结果、操作人、工位、时间、不良代码 |
+| 车间看板 | 深色大屏，KPI / 小时产出 / WIP / TOP 不良，SignalR 实时推送 |
+| 现场异常 | 缺料/设备/品质异常上报与闭环 |
+| APS 排程 | 有限产能正排，按瓶颈节拍估算开工完工，甘特图展示 |
+| QC 抽检 | 出货前抽样检验台账，含待抽检候选与合格率 |
+| 物料补料 | 发料用尽拦截上线，报废一台补一台 |
+| 工艺文件 | 图纸 / SOP / 检验报告上传归档（MinIO 或本地磁盘） |
+| 任务调度 | Quartz.NET：维修超时、交期预警、夜间报表、数据清理 |
+| 账号权限 | 6 种角色，路由与接口双重校验 |
+| 操作审计 | 写操作留痕（密码类字段脱敏），管理员可检索 |
 
 ## 接口一览
 
 ```
-POST /api/auth/login|refresh|logout|change-password   认证（工号/用户名/邮箱均可登录）
-GET  /api/auth/users        POST /api/auth/users      账号管理（Admin）
+POST /api/auth/login|refresh|logout|change-password   认证
 GET  /api/master/bootstrap                            主数据引导包
-GET  /api/work-orders       POST /api/work-orders     工单列表（status=active|done|单值，lineId/keyword/from/to 按计划开工日筛）/ 建单
-GET  /api/work-orders/{id}  POST /api/work-orders/{id}/status   详情 / release|close|reopen
-POST /api/production/scan                             扫码过站（核心）
-GET  /api/production/recent                           工位最近过站流水
-POST /api/production/hold-handle?sn=                  不良返修/报废（Leader/Qc，兼容旧入口）
-GET  /api/production/repair/pending                   维修站待维修队列（from/to/lineId/stepId/defectCode/orderNo 组合筛选）
-GET  /api/production/repair/history                   维修历史（条件同队列 + status；复盘某工序某不良）
-POST /api/production/repair/checkin                   维修站进站（重复维修超上限需 force=true 管理员授权）
-POST /api/production/repair/checkout                  维修站出站（repaired=放回原工序重测 / scrap=报废）
-GET  /api/qc/inspections        POST /api/qc/inspections    QC 抽检台账（含汇总）/ 录入（仅已包装成品，Leader/Qc）
-GET  /api/qc/candidates                               待抽检候选（已包装完工 SN，含已抽次数）
-GET  /api/trace/{sn}                                  SN 追溯（含维修记录时间线）
+GET  /api/work-orders       POST /api/work-orders     工单列表 / 建单
+GET  /api/work-orders/{id}  POST /api/work-orders/{id}/status   详情 / 状态流转
+POST /api/production/scan                             扫码过站
+GET  /api/production/repair/pending                   待维修队列
+POST /api/production/repair/checkin|checkout          维修进出站
+GET  /api/qc/inspections    POST /api/qc/inspections  抽检台账 / 录入
+GET  /api/trace/{sn}                                  SN 追溯
 GET  /api/dashboard?lineId=&date=                     看板聚合
-GET  /api/exceptions        POST /api/exceptions      异常列表 / 上报
-POST /api/exceptions/{id}/close                       异常闭环
-POST /api/aps/run                               APS 排程（includeDraft=true 含草稿单）
-GET  /api/analysis/yield?by=order|product&product=&order=   工单报告（工单 / 机种维度，支持机种与工单号下钻）
-GET  /api/files     POST /api/files             工艺文件列表 / 上传（multipart，≤20MB）
-GET  /api/files/{id}/content                   文件下载
-DELETE /api/files/{id}                         删除文件（Admin）
-GET  /api/jobs      POST /api/jobs/{name}/run   调度任务列表 / 手动触发（Admin）
-GET  /api/audit?from=&to=&userName=&action=&success=  操作审计（Admin，分页）
-GET  /api/audit/{id}                                  审计详情（含请求体与请求号）
-POST /api/work-orders/{id}/replenish                  补料追加发料（Admin/Planner/Leader）
-POST /api/demo/topup                                  演示数据补数（Admin，幂等，可重复调）
-POST /api/demo/reset                                  清空生产数据后重建（Admin）
-WS   /hubs/board                                      SignalR 实时推送（scan / alert 事件）
-GET  /health/live  /health/ready                      探活（含 infra 中间件后端）
-GET  /docs                                            内网接口文档（无外网依赖）
+GET  /api/exceptions        POST /api/exceptions      异常上报 / 列表
+POST /api/aps/run                                     APS 排程
+GET  /api/analysis/yield?by=order|product             工单报告
+GET  /api/files             POST /api/files           工艺文件 / 上传
+GET  /api/jobs              POST /api/jobs/{name}/run 调度任务 / 手动触发（Admin）
+GET  /api/audit                                       操作审计（Admin）
+POST /api/work-orders/{id}/replenish                  补料
+WS   /hubs/board                                      SignalR 实时推送
+GET  /health/live  /health/ready                      探活
+GET  /docs                                            接口文档
 ```
 
-调试文件：`backend/MesApi.http`；接口冒烟脚本：`bash backend/test-api.sh`（70 项断言）；
-平台健壮性冒烟：`python scripts/smoke_platform.py`（17 项：健康检查/审计/链路 Id/404 语义）；
-浏览器端到端：`node .e2e/e2e.mjs`（18 项）+ `node .e2e/repair-e2e.mjs`（维修站 7 项，含截图）+
-`node .e2e/features-e2e.mjs`（查询条件 / 工单报告 / 维修站筛选 / QC 抽检 21 项，含截图）。
+## 测试
+
+```bash
+bash backend/test-api.sh              # 接口冒烟 70 项
+python scripts/smoke_platform.py      # 平台健壮性 17 项
+node .e2e/e2e.mjs                     # 浏览器端到端（另见 .e2e/ 下 repair / features / sidebar / tabs 脚本）
+```
 
 ## 数据模型（17 张核心表）
 
 ```
-users / refresh_tokens                  账号与 JWT 刷新令牌（PBKDF2-SHA256 21 万次迭代）
+users / refresh_tokens                  账号与 JWT 刷新令牌（PBKDF2-SHA256）
 line / workstation                      产线、工位（每工位绑定一道工序）
-process_step / product / product_route  工序字典、机型、工艺路线（序号+标准工时）
-defect_code                             不良代码（外观/焊接/电气/包装/来料）
-work_order                              工单（状态机 Draft→Released→InProduction→Completed→Closed；PlanQty 良品数 / IssuedQty 累计发料）
-serial_unit                             SN 档案（当前工序、状态：在制/隔离/完工/报废，乐观并发版本号）
-sn_move_log                             过站流水（只追加；追溯与报表唯一事实来源；含幂等键/生产日期/小时/班次）
-repair_record                           维修记录（第 N 次维修、不良工序/代码、措施、进出站人与时间；SN+RepairNo 唯一）
-qc_inspection                           QC 抽检台账（已包装成品；类别/判定/不良/抽检人；不推进工序、不改 SN 状态）
+process_step / product / product_route  工序字典、机型、工艺路线
+defect_code                             不良代码
+work_order                              工单（Draft→Released→InProduction→Completed→Closed）
+serial_unit                             SN 档案（当前工序、状态、乐观并发版本号）
+sn_move_log                             过站流水（只追加，追溯与报表的事实来源）
+repair_record                           维修记录（SN+RepairNo 唯一）
+qc_inspection                           QC 抽检台账
 exception_event                         现场异常
-audit_log                               操作审计（脱敏请求体、状态码、耗时、终端 IP、请求号；默认留存 90 天）
-file_document                           文件档案（分类/机种/工单/SN + 对象键，内容在 MinIO）
-daily_report                            夜间报表（按产线按天的产量/良率/TOP 不良）
+audit_log                               操作审计（默认留存 90 天）
+file_document                           文件档案（内容在 MinIO 或本地磁盘）
+daily_report                            夜间报表
 ```
 
-### 维修站进出站规则
+## 部署要点
 
-```
-判不良(Fail) → SN 隔离(Hold) ──> 维修站进站（repairNo = 历史次数 + 1）
-                                   │  重复进站拦截（已有 InProgress 记录 → 409）
-                                   │  超上限拦截（已维修 ≥2 次且非管理员 → 409，管理员可 force）
-                                   ▼
-                        修复出站(repaired) ──> SN 回到「原判不良工序」重新扫码重测
-                        报废出站(scrap)   ──> SN 终态 Scrapped，写 Scrap 过站流水
-重测再不良 → 再次隔离 → 再次进站（repairNo 递增，即"重复维修"闭环）
-```
+1. 修改 `appsettings.json` 的 `Jwt:Key`（≥32 字符）与 `Seed:AdminPassword`，登录后改默认密码
+2. `docker compose up -d` 起 MySQL，后端以 `ASPNETCORE_ENVIRONMENT=Production` 运行即执行迁移
+3. 单端口发布：`npm run build` 后把 `frontend/dist` 拷到 `backend/MesApi/wwwroot/`，由后端托管前端
+4. 看板大屏：浏览器打开 `/dashboard` 按 F11 全屏
 
-## 部署要点（上产线前）
+备份：`python scripts/backup.py --provider mysql --container mes-mysql`，产物在 `backups/`，保留 30 天。
 
-1. **改密**：`appsettings.json` 的 `Jwt:Key`（≥32 字符）与 `Seed:AdminPassword`，登录后立即改默认密码
-2. **数据库**：`docker compose up -d` 起 MySQL 8.4，后端以 `ASPNETCORE_ENVIRONMENT=Production` 运行即走正式迁移
-3. **单端口发布**：`frontend && npm run build`，把 `dist/*` 拷到 `backend/MesApi/wwwroot/`，后端即托管前端（车间只需访问一个地址）
-4. **扫码枪**：即插即用（USB HID 键盘模式），无需驱动；PDA/手机浏览器同样可用
-5. **看板大屏**：浏览器打开 `/dashboard` 按 F11 全屏
-
-## 运维手册（上线后每天要用）
-
-### 日志
-
-- 位置：`backend/MesApi/logs/mes-YYYYMMDD.log`（按天滚动，单文件 50MB 溢出切分，保留 30 天）
-- 每个请求一行：`HTTP POST /api/production/scan -> 200 in 12.4ms`，慢请求自动升级为 `WRN`（阈值 `Diagnostics:SlowRequestMs`，默认 800ms）
-- 用户报"某单没成功"时，让他把界面提示里的**请求号**发过来，按 `grep <请求号> logs/*.log` 精确定位；或直接在「操作审计」页搜该请求号
-
-### 探活（给负载均衡 / 监控用）
-
-```bash
-curl http://<host>:5080/health/live    # 进程活着就 200
-curl http://<host>:5080/health/ready   # DB 可连 + 迁移已应用 + 磁盘空间，不可用返回 503
-```
-
-两者分开：数据库抖动时只摘流量，不重启容器（否则冷启动反而更慢）。
-
-### 操作审计
-
-- 入口：登录后「系统 → 操作审计」（仅管理员）
-- 记录范围：所有 `POST/PUT/DELETE/PATCH`，**过站扫码除外**（`Audit:ExcludePaths`）——扫码本身已在 `sn_move_log` 里全量留痕，重复记一份会让高峰写入翻倍
-- 已自动脱敏：`password / newPassword / refreshToken / token / secret`
-- 留存：默认 90 天（`Audit:RetentionDays`），后台任务每天清理；`sn_move_log` 永不清理（追溯与审厂的原始凭证）
-
-### 备份与恢复
-
-```bash
-# MySQL（走 docker 容器内的 mysqldump，现场机器不用装客户端）
-MES_DB_PASSWORD=*** python scripts/backup.py --provider mysql --container mes-mysql
-
-# SQLite 演示模式（用在线备份 API，WAL 未落盘的数据也不会丢）
-python scripts/backup.py --provider sqlite
-```
-
-- 产物在 `backups/`，默认保留 30 天，只清理脚本自己产出的 `mes_*` 文件
-- Windows 服务器也可用 `scripts/backup.ps1`（需 `-ExecutionPolicy Bypass` 或进程级放行）
-- 恢复 MySQL：`gunzip -c backups/mes_mysql_*.sql.gz | docker exec -i mes-mysql mysql -u root -p mes_server_power`
-- 建议挂 Windows 任务计划：每天 02:00 跑一次，并把 `backups/` 同步到另一台机器/网盘
-
-### 现场排障对照表
-
-| 现象 | 先看什么 |
-|---|---|
-| 扫码没反应 / 提示无法连接 | `/health/ready`；浏览器 F12 Network 看请求是否 4xx/5xx 与请求号 |
-| 提示"请求过于频繁"（429） | 该账号 1 分钟内扫码超 600 次，多为扫码枪连发或多人共用账号，按工位拆账号 |
-| 提示"已在该工序/工序不匹配" | 正常防呆：SN 当前工序与扫描工位不一致，查 `/trace/{sn}` 看它停在哪 |
-| 数据不对但接口成功 | 「操作审计」按操作人 + 时间查，确认是谁在哪台终端改的 |
-| 后台任务没生效 | 日志搜"维护任务执行失败"；`GET /api/jobs` 看下次触发时间 |
-| 夜间报表缺数 | `POST /api/jobs/NightlyReport/run?date=2026-11-12` 补跑，看日志 |
-| 文件上传失败 | 单文件 ≤20MB；`/health/ready` 的 `infra.storage` 是否 `s3/minio`；MinIO 控制台看 bucket 文件 |
-| 看板不刷新但扫码正常 | RabbitMQ 是否连上（`infra.messaging`）；队列积压看管理台 `mes.scan-dashboard` |
-| 扫码提示"物料已用尽" | 工单 `IssuedQty` 已被上线数用完：开详情看「报废」与「补料」，按报废台数走「补料」追加发料，不要改计划数量 |
-| 工单进度卡在 99% 不上 100% | 完工数还没到 `PlanQty`（少 1 台也算没完工）；看详情页报废明细与该单隔离数，报废的要补料才能补回计划 |
-
-### APS 排程算法（看懂这一张表就够）
-
-```
-时产能 = 3600 ÷ 瓶颈节拍 × 瓶颈工序并行工位数 × (1 - 良率折损3%)
-开工   = 同产线上一个工单的完工时间（正排，串行累加）
-完工   = 开工 + 剩余数量 ÷ 时产能
-瓶颈   = 该机型工艺路线里 TaktSeconds 最大的工序（流水线由最慢工序决定产量）
-```
-
-简化项（二期）：未展开班次日历（默认 24h 连续产能）、未计算换型时间、未做多产线择优分配。要更准，先补这三样，再考虑遗传算法/OR-Tools。
+日志在 `backend/MesApi/logs/`，按天滚动保留 30 天；每个请求一行日志，排查问题时按界面提示的请求号 grep 即可。
 
 ## 已知边界（二期建议）
 
-- 物料批次追溯（投料记录、先进先出）未纳入 MVP；`sn_move_log` 已预留扩展位
-- 老化房设备数采（PLC/OPC UA）未接入，老化结果目前由人工判定录入
-- 排产为优先级+交期简单排序，未做有限产能排程
-- 多实例部署：缓存与消息已是外置组件，还差 **SignalR Redis backplane**（跨实例广播）与 **Quartz AdoJobStore 集群模式**（防重复执行）
+- 物料批次追溯（投料记录、先进先出）未纳入；`sn_move_log` 已预留扩展位
+- 老化房设备数采（PLC/OPC UA）未接入，老化结果人工录入
 - APS 未含换型时间、班次日历、多产线择优分配
-- 文件上传未做病毒扫描与预览（图纸建议前端只做下载）
+- 多实例部署还差 SignalR Redis backplane 与 Quartz AdoJobStore 集群模式
+- 文件上传未做病毒扫描与预览

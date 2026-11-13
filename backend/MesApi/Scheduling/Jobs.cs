@@ -180,7 +180,7 @@ public class NightlyReportJob(IServiceScopeFactory scopeFactory, ILogger<Nightly
 
 /// <summary>
 /// 数据保养：每天 03:30 清理过期 refresh token（30 天前）与超保留期的审计日志（默认 90 天）。
-/// sn_move_log 永不清理——那是追溯与审厂的原始凭证。
+/// sn_move_log 永不清理，追溯与审厂依赖它。
 /// </summary>
 [DisallowConcurrentExecution]
 public class HousekeepingJob(IServiceScopeFactory scopeFactory, ILogger<HousekeepingJob> logger) : IJob

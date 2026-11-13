@@ -180,9 +180,7 @@ public class WorkOrderService(MesDbContext db) : IWorkOrderService
                 : null
         }).ToList();
 
-        // 直通率 FPY：一次没判过不良就完工的台数 ÷ 投入。
-        // 注意别拿"工序合格率"（Pass ÷ 过站次数）冒充它 —— 一道工序判一次不良，
-        // 一台机走 9 道工序，工序合格率永远 98%，看着漂亮但毫无意义。
+        // 直通率 FPY：一次没判过不良就完工的台数 ÷ 投入（勿与工序合格率混淆）。
         var failedUnitIds = await db.MoveLogs.AsNoTracking()
             .Where(l => l.WorkOrderId == id && l.Result == "Fail")
             .Select(l => l.SerialUnitId)
@@ -312,8 +310,7 @@ public class WorkOrderService(MesDbContext db) : IWorkOrderService
     }
 
     /// <summary>
-    /// 补料：把发料总量往上加，产线才能继续上线新 SN。
-    /// 这里不强制"必须已经欠料"——提前补料是正常排产动作，只要工单没关单就允许。
+    /// 补料：追加发料。不要求已欠料，未关单即可提前补。
     /// </summary>
     public async Task<WorkOrderListItem> ReplenishAsync(int id, int qty, string? reason, CancellationToken ct)
     {

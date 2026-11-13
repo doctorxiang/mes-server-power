@@ -20,14 +20,12 @@ public interface IQcInspectionService
 }
 
 /// <summary>
-/// QC 抽检：对象是<b>已包装</b>的成品（过了末道包装工序、状态 Completed）。
+/// QC 抽检：对象是已包装的成品（过了末道包装工序、状态 Completed）。
 ///
-/// 为什么不复用 sn_move_log：
-///   过站流水是"产线上逐台全检"，抽检是"入库前后按批抽几台拆箱复核"，
-///   前者推进工序、后者只是留质量证据；混在一张表里会让工单报告的口径全乱。
-///
-/// 抽检不合格不报废、不隔离 —— 现场做法是<b>加严抽检</b>（加抽一倍）并回溯同批，
-/// 所以这里只记录判定与不良，SN 状态保持不变，方便继续追这一台的工序履历。
+/// 不复用 sn_move_log：过站流水是产线逐台全检且推进工序，
+/// 抽检只留质量证据，混在一张表里会打乱工单报告的口径。
+/// 抽检不合格不报废、不隔离（现场做法是加严抽检并回溯同批），
+/// 这里只记录判定与不良，SN 状态保持不变。
 /// </summary>
 public class QcInspectionService(MesDbContext db) : IQcInspectionService
 {
@@ -96,7 +94,7 @@ public class QcInspectionService(MesDbContext db) : IQcInspectionService
 
     /// <summary>
     /// 待抽检候选：已包装完工的 SN，按完工时间倒序。
-    /// 「还没抽过」排在前面，抽过的也留在列表里但带次数 —— 质检员往往要抽刚下线的那批。
+    /// 没抽过的排在前面，抽过的保留在列表里并带次数。
     /// </summary>
     public async Task<IReadOnlyList<QcCandidateRow>> CandidatesAsync(
         string? orderNo, int? lineId, string? productCode, int limit, CancellationToken ct)

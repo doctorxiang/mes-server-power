@@ -290,7 +290,7 @@ public class ProductionService(
 
         return Result(true, false,
             passed
-                ? (next is null ? "报工成功，该 SN 全部工序完成 🎉" : $"报工成功，已流转至「{next.Name}」")
+                ? (next is null ? "报工成功，该 SN 全部工序完成" : $"报工成功，已流转至「{next.Name}」")
                 : $"已记录不良（{defect!.Name}），SN 已隔离待处理",
             sn, orderNo, routeStep, totalSteps, unit, next, passed ? null : defect?.Name, passQty, failQty);
     }

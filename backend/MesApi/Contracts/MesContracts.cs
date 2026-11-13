@@ -146,8 +146,7 @@ public record RepairFilter(
     DateTime? FromUtc, DateTime? ToUtc, string? Status, int Limit = 50);
 
 /// <summary>
-/// 维修历史行：维修站的"查问题"用这张表，按日期 / 产线 / 工序 / 不良代码翻历史，
-/// 比只看待修队列有用 —— 队列只有当下，复盘虚焊到底折腾了多少台得看历史。
+/// 维修历史行：按日期 / 产线 / 工序 / 不良代码检索维修记录，用于复盘。
 /// </summary>
 public record RepairHistoryRow(
     int Id, string Sn, string OrderNo, string ProductName, string LineName,
