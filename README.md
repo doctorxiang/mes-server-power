@@ -150,6 +150,16 @@ daily_report                            夜间报表
 
 日志在 `backend/MesApi/logs/`，按天滚动保留 30 天；每个请求一行日志，排查问题时按界面提示的请求号 grep 即可。
 
+### 公网演示：GitHub Pages + 本机后端
+
+前端可发布到 GitHub Pages（`.github/workflows/deploy-frontend.yml`，推 main 自动构建），后端仍跑在本机，用内网穿透暴露出去：
+
+```bash
+.\scripts\start-tunnel.ps1            # 需要 cloudflared，输出 https://xxx.trycloudflare.com
+```
+
+把这个地址填到仓库 Settings → Secrets and variables → Actions → Variables 的 `VITE_API_BASE`，再重跑部署，Pages 站点就会请求本机后端。隧道地址每次重启都会变，换地址后更新 `VITE_API_BASE` 并重跑即可。
+
 ## 已知边界（二期建议）
 
 - 物料批次追溯（投料记录、先进先出）未纳入；`sn_move_log` 已预留扩展位
