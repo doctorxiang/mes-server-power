@@ -16,6 +16,14 @@ param(
 
 $ErrorActionPreference = "Stop"
 $ProgressPreference = "SilentlyContinue"
+
+# 环境里可能同时存在 HTTP_PROXY 与 http_proxy（大小写重复），Start-Process 复制环境时会报字典冲突
+for ($i = 0; $i -lt 4; $i++) {
+    $keys = [Environment]::GetEnvironmentVariables('Process').Keys | Where-Object { $_ -match '(?i)_proxy$' }
+    if (-not $keys) { break }
+    foreach ($k in $keys) { [Environment]::SetEnvironmentVariable($k, $null, 'Process') }
+}
+
 $root = Split-Path $PSScriptRoot -Parent
 $stateFile = Join-Path $env:TEMP "mes-demo-tunnel.json"
 $owner, $name = $Repo.Split('/')
@@ -74,6 +82,9 @@ if ($publicUrl) {
     Write-Host " 复用 $publicUrl" -ForegroundColor Green
 } else {
     Write-Host " 新建中" -ForegroundColor Yellow
+    # 旧进程可能还活着但域名已被 Cloudflare 注销，先清掉避免堆积
+    Get-Process cloudflared -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+    Start-Sleep -Seconds 1
     $logOut = Join-Path $env:TEMP "cloudflared-demo.out.log"
     $logErr = Join-Path $env:TEMP "cloudflared-demo.err.log"
     Remove-Item $logOut, $logErr -Force -ErrorAction SilentlyContinue
@@ -121,7 +132,7 @@ if (-not $token) {
     if ($changed) {
         $body = @{ name = "VITE_API_BASE"; value = $publicUrl } | ConvertTo-Json -Compress
         try {
-            Invoke-RestMethod -Method Put -Uri $varUrl -Headers $headers -Body $body -ContentType "application/json" -TimeoutSec 25 | Out-Null
+            Invoke-RestMethod -Method Patch -Uri $varUrl -Headers $headers -Body $body -ContentType "application/json" -TimeoutSec 25 | Out-Null
         } catch {
             if ($_.Exception.Response.StatusCode.value__ -eq 404) {
                 Invoke-RestMethod -Method Post -Uri "https://api.github.com/repos/$Repo/actions/variables" -Headers $headers -Body $body -ContentType "application/json" -TimeoutSec 25 | Out-Null
